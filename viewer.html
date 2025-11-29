@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interactive PMTiles geospatial data viewer for flood depth visualization">
+    <meta name="theme-color" content="#2563eb">
+    <title>PMTiles Geospatial Viewer</title>
+    
+    <!-- Preconnect to CDNs for faster loading -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
+    
+    <!-- MapLibre GL JS -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js" defer></script>
+    
+    <!-- PMTiles Protocol -->
+    <script src="https://unpkg.com/pmtiles@3.0.3/dist/pmtiles.js" defer></script>
+    
+    <!-- Application Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar" role="complementary" aria-label="Controls">
+            <header class="header">
+                <h1>🗺️ PMTiles Viewer</h1>
+                <p class="subtitle">Interactive geospatial data visualization</p>
+            </header>
+
+            <!-- Time Slider Section -->
+            <section class="section time-section" aria-labelledby="time-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🕐</span>
+                    <h3 id="time-section-title">Time Slider</h3>
+                </div>
+                <div class="time-controls">
+                    <div class="time-info">
+                        <span>Time Slot:</span>
+                        <span class="badge" id="currentTime" aria-live="polite">Loading...</span>
+                    </div>
+                    <div class="playback-controls">
+                        <button 
+                            id="playPauseBtn" 
+                            class="play-pause-btn" 
+                            aria-label="Play or pause time animation"
+                            aria-pressed="false"
+                        >
+                            ▶️ Play
+                        </button>
+                    </div>
+                    <div class="slider-container">
+                        <input 
+                            type="range" 
+                            id="timeSlider" 
+                            min="0" 
+                            max="10" 
+                            value="0" 
+                            step="1" 
+                            aria-label="Select time slot"
+                            aria-valuetext="Time slot 1"
+                        >
+                    </div>
+                    <div class="time-labels" aria-hidden="true">
+                        <span id="timeStart">--:--</span>
+                        <span id="timeEnd">--:--</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Visualization Controls -->
+            <section class="section control-section" aria-labelledby="control-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🎨</span>
+                    <h3 id="control-section-title">Visualization Controls</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <label for="opacitySlider">
+                            Opacity: <span id="opacityValue">80%</span>
+                        </label>
+                        <div class="slider-container">
+                            <input 
+                                type="range" 
+                                id="opacitySlider" 
+                                min="0" 
+                                max="100" 
+                                value="80" 
+                                aria-label="Layer opacity"
+                                aria-valuetext="80 percent"
+                            >
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label for="baseMapStyle">Base Map Style</label>
+                        <select id="baseMapStyle" aria-label="Select base map style">
+                            <option value="openstreetmap">OpenStreetMap</option>
+                            <option value="light">Light Map</option>
+                            <option value="dark">Dark Map</option>
+                            <option value="satellite">Satellite</option>
+                            <option value="topo">Topographic</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="floodLayerType">Flood Layer Type</label>
+                        <select id="floodLayerType" aria-label="Select flood layer visualization type">
+                            <option value="multiclass" selected>Multiclass Depth</option>
+                            <option value="binary">Binary (Flood/No Flood)</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Map Statistics -->
+            <section class="section stats-section" aria-labelledby="stats-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">📊</span>
+                    <h3 id="stats-section-title">Map Statistics</h3>
+                </div>
+                <dl class="stats">
+                    <div class="stat-item">
+                        <dt class="stat-label">Current Zoom:</dt>
+                        <dd class="stat-value" id="currentZoom">0.00</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Loaded Tiles:</dt>
+                        <dd class="stat-value" id="loadedTiles">0</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Visible Features:</dt>
+                        <dd class="stat-value" id="visibleFeatures">0</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Min Depth (visible):</dt>
+                        <dd class="stat-value" id="minDepth">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Max Depth (visible):</dt>
+                        <dd class="stat-value" id="maxDepth">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Total Area (view):</dt>
+                        <dd class="stat-value" id="totalArea">0.00 km²</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Flooded Area (&gt;1m):</dt>
+                        <dd class="stat-value" id="floodedArea">0.00 km²</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">PMTiles Size:</dt>
+                        <dd class="stat-value" id="pmtilesSize">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Load Time:</dt>
+                        <dd class="stat-value" id="loadTime">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Cursor Position:</dt>
+                        <dd class="stat-value stat-small" id="cursorPosition">0.000000, 0.000000</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Activity Logs -->
+            <section class="section logs-section" aria-labelledby="logs-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">📋</span>
+                    <h3 id="logs-section-title">Activity Logs</h3>
+                </div>
+                <div 
+                    class="logs-container" 
+                    id="logsContainer" 
+                    role="log" 
+                    aria-live="polite" 
+                    aria-label="Application activity log"
+                >
+                    <!-- Logs will be dynamically added here -->
+                </div>
+            </section>
+        </aside>
+
+        <!-- Map Container -->
+        <main class="map-wrapper">
+            <div 
+                id="map" 
+                role="application" 
+                aria-label="Interactive flood depth map"
+                tabindex="0"
+            ></div>
+            
+            <!-- Loading Overlay -->
+            <div 
+                id="loadingOverlay" 
+                class="loading-overlay" 
+                style="display: none;" 
+                role="status" 
+                aria-live="polite"
+            >
+                <div class="spinner" aria-hidden="true"></div>
+                <p class="loading-text">Loading PMTiles...</p>
+            </div>
+            
+            <!-- Cursor Position Overlay -->
+            <div class="map-overlay" aria-live="polite">
+                <h4>📍 Cursor Position</h4>
+                <div class="coordinates" id="mapCoordinates">
+                    Lat: 0.000000 | Lng: 0.000000
+                </div>
+            </div>
+            
+            <!-- Flood Depth Legend -->
+            <div class="map-overlay legend-overlay" id="legendOverlay" role="complementary" aria-label="Flood depth legend">
+                <h4 id="legendTitle">💧 Flood Depth Legend</h4>
+                <div class="legend-items" id="legendItems">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #f5fbff, #d6ecff);" aria-hidden="true"></div>
+                        <span class="legend-label">0 - 0.2m</span>
+                        <span class="legend-severity minor">Minor</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #d6ecff, #9dd1ff);" aria-hidden="true"></div>
+                        <span class="legend-label">0.2 - 0.5m</span>
+                        <span class="legend-severity moderate">Moderate</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #9dd1ff, #5aa8ff);" aria-hidden="true"></div>
+                        <span class="legend-label">0.5 - 1m</span>
+                        <span class="legend-severity significant">Significant</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #5aa8ff, #1e6ddf);" aria-hidden="true"></div>
+                        <span class="legend-label">1 - 2m</span>
+                        <span class="legend-severity severe">Severe</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #1e6ddf, #0b3a8c);" aria-hidden="true"></div>
+                        <span class="legend-label">&gt; 2m</span>
+                        <span class="legend-severity extreme">Extreme</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Application Module -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
