@@ -119,13 +119,32 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             return
         super().log_error(format, *args)
     
-    def log_message(self, format, *args):
-        """Custom log format - skip static assets."""
-        path = args[0] if args else ''
-        # Only filter if path is a string (not an int like HTTP status codes)
-        if isinstance(path, str) and any(ext in path for ext in ['.js', '.css', '.png', '.ico']):
+    def log_request(self, code='-', size='-'):
+        """Override to log with response size in KB."""
+        if isinstance(code, str):
+            code = code
+        
+        # Format size in KB
+        size_kb = '-'
+        if isinstance(size, int) and size >= 0:
+            size_kb = f"{size / 1024:.2f} KB"
+        elif isinstance(size, str) and size != '-':
+            try:
+                size_kb = f"{int(size) / 1024:.2f} KB"
+            except (ValueError, TypeError):
+                size_kb = size
+        
+        # Skip logging for static assets
+        if any(ext in self.path for ext in ['.js', '.css', '.png', '.ico']):
             return
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
+        
+        # Log format: [TIME] METHOD PATH STATUS SIZE
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {self.command} {self.path} - {code} - {size_kb}")
+    
+    def log_message(self, format, *args):
+        """Custom log format - handled by log_request."""
+        # Skip default logging, use log_request instead
+        pass
     
     def handle(self):
         """Handle request with connection error suppression."""
@@ -189,16 +208,18 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
     def _send_json_response(self, data: dict, status: int = 200):
         """Send JSON response with proper headers."""
         response = json.dumps(data, indent=2).encode('utf-8')
+        response_size = len(response)
         
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Content-Length', len(response))
+        self.send_header('Content-Length', response_size)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Cache-Control', 'no-cache')
         self.end_headers()
         
         try:
             self.wfile.write(response)
+            self.log_request(status, response_size)
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
     
@@ -246,6 +267,9 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
                 self._send_common_headers(is_pmtiles, fs.st_mtime)
                 self.end_headers()
                 
+                # Log the 206 response with size
+                self.log_request(206, content_length)
+                
                 return _RangeFile(f, content_length)
             except (ValueError, IndexError):
                 pass
@@ -255,6 +279,10 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(file_size))
         self._send_common_headers(is_pmtiles, fs.st_mtime)
         self.end_headers()
+        
+        # Log the 200 response with size
+        self.log_request(200, file_size)
+        
         return f
     
     def _parse_range(self, range_header: str, file_size: int) -> tuple:
@@ -332,25 +360,7 @@ def run_server(port: int = DEFAULT_PORT, directory: str = None):
     server_address = ('', port)
     httpd = HTTPServer(server_address, APIRequestHandler)
     
-    print(f"""
-╔══════════════════════════════════════════════════════════════╗
-║           PMTiles Viewer Server v2.0.0                       ║
-╠══════════════════════════════════════════════════════════════╣
-║  Server:     http://localhost:{port:<24}           ║
-║  Viewer:     http://localhost:{port}/viewer.html{' '*14}║
-║  Directory:  {base_dir[:45]:<45}║
-╠══════════════════════════════════════════════════════════════╣
-║  API Endpoints:                                              ║
-║    GET /api/pmtiles      - List available PMTiles files      ║
-║    GET /api/pmtiles/:id  - Get file details                  ║
-║    GET /api/config       - Get server configuration          ║
-║    GET /api/health       - Health check                      ║
-╠══════════════════════════════════════════════════════════════╣
-║  PMTiles Files: {files_info['count']:<3} found                                    ║
-╚══════════════════════════════════════════════════════════════╝
-    
-Press Ctrl+C to stop the server
-""")
+    print(f"http://localhost:{port} | {files_info['count']} PMTiles files | Dir: {base_dir}\nPress Ctrl+C to stop.")
     
     try:
         httpd.serve_forever()
