@@ -26,8 +26,8 @@
         <!-- Sidebar Controls -->
         <aside class="sidebar" role="complementary" aria-label="Controls">
             <header class="header">
-                <h1>🗺️ PMTiles Viewer</h1>
-                <p class="subtitle">Interactive geospatial data visualization</p>
+                <h1>Flood Visualization Engine</h1>
+                <p class="subtitle">Interactive and Optimized</p>
             </header>
 
             <!-- Time Slider Section -->
@@ -113,6 +113,62 @@
                 </div>
             </section>
 
+            <!-- Layer Controls -->
+            <section class="section control-section" aria-labelledby="layers-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🗺️</span>
+                    <h3 id="layers-section-title">Layers</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleWardBoundaries" checked>
+                            <span>Ward Boundaries (Choropleth)</span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleFloodDepth" checked>
+                            <span>Flood Depth</span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleRoadways">
+                            <span>Roadways</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LULC Classes -->
+            <section class="section control-section" aria-labelledby="lulc-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🌿</span>
+                    <h3 id="lulc-section-title">Land Use Classes</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <div class="dropdown-multiselect" id="lulcDropdown">
+                            <button type="button" class="dropdown-toggle" id="lulcDropdownBtn">
+                                <span>Select Land Use Classes</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-menu" id="lulcDropdownMenu">
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Tree Cover"><span class="lulc-color" style="background:#228b22"></span>Tree Cover</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Shrubland"><span class="lulc-color" style="background:#90ee90"></span>Shrubland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Grassland"><span class="lulc-color" style="background:#adff2f"></span>Grassland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Cropland"><span class="lulc-color" style="background:#ffd700"></span>Cropland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Built_up"><span class="lulc-color" style="background:#dc143c"></span>Built-up</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Sparse Vegetation"><span class="lulc-color" style="background:#deb887"></span>Sparse Vegetation</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Water Bodies"><span class="lulc-color" style="background:#1e90ff"></span>Water Bodies</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Mangroves"><span class="lulc-color" style="background:#006400"></span>Mangroves</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Map Statistics -->
             <section class="section stats-section" aria-labelledby="stats-section-title">
                 <div class="section-header">
@@ -147,18 +203,6 @@
                     <div class="stat-item">
                         <dt class="stat-label">Flooded Area (&gt;1m):</dt>
                         <dd class="stat-value" id="floodedArea">0.00 km²</dd>
-                    </div>
-                    <div class="stat-item">
-                        <dt class="stat-label">PMTiles Size:</dt>
-                        <dd class="stat-value" id="pmtilesSize">--</dd>
-                    </div>
-                    <div class="stat-item">
-                        <dt class="stat-label">Load Time:</dt>
-                        <dd class="stat-value" id="loadTime">--</dd>
-                    </div>
-                    <div class="stat-item">
-                        <dt class="stat-label">Cursor Position:</dt>
-                        <dd class="stat-value stat-small" id="cursorPosition">0.000000, 0.000000</dd>
                     </div>
                 </dl>
             </section>
@@ -202,14 +246,6 @@
                 <p class="loading-text">Loading PMTiles...</p>
             </div>
             
-            <!-- Cursor Position Overlay -->
-            <div class="map-overlay" aria-live="polite">
-                <h4>📍 Cursor Position</h4>
-                <div class="coordinates" id="mapCoordinates">
-                    Lat: 0.000000 | Lng: 0.000000
-                </div>
-            </div>
-            
             <!-- Flood Depth Legend -->
             <div class="map-overlay legend-overlay" id="legendOverlay" role="complementary" aria-label="Flood depth legend">
                 <h4 id="legendTitle">💧 Flood Depth Legend</h4>
@@ -248,3 +284,4 @@
     <script type="module" src="js/main.js"></script>
 </body>
 </html>
+<!--  -->

@@ -22,6 +22,9 @@ from urllib.parse import urlparse
 # Configuration
 DEFAULT_PORT = 8000
 PMTILES_DIR = "pmtiles"
+PMTILES_FLOOD_DIR = "pmtiles/flood"
+PMTILES_STATIC_DIR = "pmtiles/static"
+CITY_DIR = "city"
 
 
 class PMTilesAPI:
@@ -32,10 +35,11 @@ class PMTilesAPI:
         self.pmtiles_dir = self.base_dir / PMTILES_DIR
     
     def get_available_files(self) -> dict:
-        """Discover all available PMTiles files with metadata."""
+        """Discover all available PMTiles files with metadata (flood only)."""
         files = []
-        if self.pmtiles_dir.exists():
-            for pmtile_path in self.pmtiles_dir.glob("*.pmtiles"):
+        flood_dir = self.base_dir / PMTILES_FLOOD_DIR
+        if flood_dir.exists():
+            for pmtile_path in flood_dir.glob("*.pmtiles"):
                 stat = pmtile_path.stat()
                 name = pmtile_path.stem
                 time_slot = name.replace("PMTile_", "") if name.startswith("PMTile_") else name
@@ -46,7 +50,7 @@ class PMTilesAPI:
                     "size": stat.st_size,
                     "sizeFormatted": self._format_size(stat.st_size),
                     "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "path": f"/{PMTILES_DIR}/{pmtile_path.name}"
+                    "path": f"/{PMTILES_FLOOD_DIR}/{pmtile_path.name}"
                 })
         
         files.sort(key=lambda x: x["timeSlot"])
@@ -57,6 +61,55 @@ class PMTilesAPI:
             "files": files,
             "timestamp": datetime.now().isoformat()
         }
+    
+    def get_static_layers(self) -> dict:
+        """Discover all static PMTiles layers."""
+        layers = []
+        static_dir = self.base_dir / PMTILES_STATIC_DIR
+        if static_dir.exists():
+            for pmtile_path in static_dir.glob("*.pmtiles"):
+                stat = pmtile_path.stat()
+                name = pmtile_path.stem
+                
+                layers.append({
+                    "id": name,
+                    "name": name.upper().replace("_", " "),
+                    "filename": pmtile_path.name,
+                    "size": stat.st_size,
+                    "sizeFormatted": self._format_size(stat.st_size),
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "path": f"/{PMTILES_STATIC_DIR}/{pmtile_path.name}"
+                })
+        
+        return {
+            "success": True,
+            "count": len(layers),
+            "layers": layers,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    def get_ward_boundaries(self) -> dict:
+        """Get city ward boundary GeoJSON."""
+        city_dir = self.base_dir / CITY_DIR
+        ward_file = city_dir / "city_wards_boundary.geojson"
+        
+        if not ward_file.exists():
+            return {"success": False, "error": "Ward boundaries file not found"}
+        
+        try:
+            with open(ward_file, 'r', encoding='utf-8') as f:
+                geojson_data = json.load(f)
+            
+            stat = ward_file.stat()
+            return {
+                "success": True,
+                "data": geojson_data,
+                "size": stat.st_size,
+                "sizeFormatted": self._format_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
     
     def get_file_info(self, filename: str) -> dict:
         """Get detailed info about a specific PMTiles file."""
@@ -164,6 +217,10 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
         elif path.startswith('/api/pmtiles/'):
             filename = path.split('/')[-1]
             self._handle_api_pmtiles_info(filename)
+        elif path == '/api/static-layers':
+            self._handle_api_static_layers()
+        elif path == '/api/ward-boundaries':
+            self._handle_api_ward_boundaries()
         elif path == '/api/health':
             self._handle_api_health()
         elif path == '/api/config':
@@ -188,6 +245,15 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             "version": "2.0.0"
         })
     
+    def _handle_api_static_layers(self):
+        """Return list of static layers."""
+        self._send_json_response(self.api.get_static_layers())
+    
+    def _handle_api_ward_boundaries(self):
+        """Return ward boundaries GeoJSON."""
+        response = self.api.get_ward_boundaries()
+        self._send_json_response(response, 200 if response.get("success") else 404)
+    
     def _handle_api_config(self):
         """Return server configuration with dynamic time slots."""
         files_response = self.api.get_available_files()
@@ -197,7 +263,8 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             "success": True,
             "config": {
                 "timeSlots": time_slots,
-                "pmtilesDir": PMTILES_DIR,
+                "pmtilesFloodDir": PMTILES_FLOOD_DIR,
+                "pmtilesStaticDir": PMTILES_STATIC_DIR,
                 "initialCenter": [77.0293, 28.4622],
                 "initialZoom": 11,
                 "initialStyle": "light",

@@ -39,7 +39,14 @@ class UIController {
             legendItems: document.getElementById('legendItems'),
             legendTitle: document.getElementById('legendTitle'),
             loadingOverlay: document.getElementById('loadingOverlay'),
-            loadingText: document.querySelector('.loading-text')
+            loadingText: document.querySelector('.loading-text'),
+            toggleWardBoundaries: document.getElementById('toggleWardBoundaries'),
+            toggleFloodDepth: document.getElementById('toggleFloodDepth'),
+            toggleRoadways: document.getElementById('toggleRoadways'),
+            lulcDropdown: document.getElementById('lulcDropdown'),
+            lulcDropdownBtn: document.getElementById('lulcDropdownBtn'),
+            lulcDropdownMenu: document.getElementById('lulcDropdownMenu'),
+            lulcClassToggles: document.querySelectorAll('.lulc-class')
         };
         
         // State
@@ -68,7 +75,9 @@ class UIController {
      * Setup control event listeners
      */
     _setupEventListeners() {
-        const { opacitySlider, baseMapStyle, floodLayerType } = this.elements;
+        const { opacitySlider, baseMapStyle, floodLayerType, 
+                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, 
+                lulcDropdown, lulcDropdownBtn, lulcClassToggles } = this.elements;
         
         // Opacity slider with debounce
         let opacityTimeout;
@@ -90,6 +99,51 @@ class UIController {
         // Flood layer type
         floodLayerType?.addEventListener('change', (e) => {
             this.setLayerType(e.target.value);
+        });
+
+        // Layer toggles
+        toggleWardBoundaries?.addEventListener('change', (e) => {
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'ward-boundaries', visible: e.target.checked });
+        });
+
+        toggleFloodDepth?.addEventListener('change', (e) => {
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'flood-depth', visible: e.target.checked });
+        });
+
+        toggleRoadways?.addEventListener('change', (e) => {
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'roadways', visible: e.target.checked });
+        });
+
+        // LULC dropdown toggle
+        lulcDropdownBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            lulcDropdown?.classList.toggle('open');
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            if (lulcDropdown && !lulcDropdown.contains(e.target)) {
+                lulcDropdown.classList.remove('open');
+            }
+        });
+
+        // LULC class toggles
+        lulcClassToggles?.forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                const selectedClasses = Array.from(lulcClassToggles)
+                    .filter(cb => cb.checked)
+                    .map(cb => cb.dataset.class);
+                
+                // Update dropdown button text
+                const btnText = lulcDropdownBtn?.querySelector('span:first-child');
+                if (btnText) {
+                    btnText.textContent = selectedClasses.length > 0 
+                        ? `${selectedClasses.length} class(es) selected`
+                        : 'Select Land Use Classes';
+                }
+                
+                eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'lulc', classes: selectedClasses });
+            });
         });
     }
 

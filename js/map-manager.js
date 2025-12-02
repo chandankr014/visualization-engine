@@ -33,6 +33,8 @@ class MapManager {
         this.currentLayerType = 'multiclass';
         this._handlersSetup = false;
         this._isLoading = false;
+        this.wardBoundariesData = null;
+        this.staticLayers = new Map(); // Track loaded static layers
         
         // Base map styles
         this.baseStyles = {
@@ -100,6 +102,275 @@ class MapManager {
             this.logger.error('Failed to initialize map', error.message);
             eventBus.emit(AppEvents.MAP_ERROR, error);
         }
+    }
+
+    async loadWardBoundaries() {
+        if (this.wardBoundariesData) {
+            this.logger.info('Ward boundaries already loaded');
+            return true;
+        }
+
+        try {
+            this.logger.info('Loading ward boundaries...');
+            const response = await apiBridge.getWardBoundaries();
+            
+            if (!response.success || !response.data) {
+                throw new Error('Failed to load ward boundaries');
+            }
+
+            this.wardBoundariesData = response.data;
+            this.logger.success('Ward boundaries loaded');
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to load ward boundaries', error.message);
+            return false;
+        }
+    }
+
+    async addWardBoundary() {
+        if (!this.map || !this.wardBoundariesData) {
+            this.logger.error('Map or ward boundaries not ready');
+            return false;
+        }
+
+        try {
+            // Remove existing ward layers if present
+            if (this.map.getLayer('ward-fill')) {
+                this.map.removeLayer('ward-fill');
+            }
+            if (this.map.getLayer('ward-outline')) {
+                this.map.removeLayer('ward-outline');
+            }
+            if (this.map.getSource('ward-boundaries')) {
+                this.map.removeSource('ward-boundaries');
+            }
+
+            // Add source
+            this.map.addSource('ward-boundaries', {
+                type: 'geojson',
+                data: this.wardBoundariesData
+            });
+
+            // Add transparent fill for hover/click
+            this.map.addLayer({
+                id: 'ward-fill',
+                type: 'fill',
+                source: 'ward-boundaries',
+                paint: {
+                    'fill-color': 'transparent',
+                    'fill-opacity': 0
+                }
+            });
+
+            // Add outline layer
+            this.map.addLayer({
+                id: 'ward-outline',
+                type: 'line',
+                source: 'ward-boundaries',
+                paint: {
+                    'line-color': '#1e3a8a',
+                    'line-width': 2,
+                    'line-opacity': 0.8
+                }
+            });
+
+            this.logger.success('Ward boundaries added');
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to add ward boundaries', error.message);
+            return false;
+        }
+    }
+
+    async toggleStaticLayer(layerId, visible) {
+        if (!this.map) return false;
+
+        const sourceId = `static-${layerId}`;
+        const layerIdFill = `${sourceId}-fill`;
+        const layerIdLine = `${sourceId}-line`;
+
+        try {
+            if (visible) {
+                // Load layer if not already loaded
+                if (!this.map.getSource(sourceId)) {
+                    const pmtilesUrl = apiBridge.buildStaticLayerUrl(layerId);
+                    
+                    const p = new pmtiles.PMTiles(pmtilesUrl);
+                    const metadata = await p.getMetadata();
+                    
+                    const layerName = metadata.vector_layers?.[0]?.id || 'default';
+                    const minzoom = parseInt(metadata.minzoom) || 0;
+                    const maxzoom = parseInt(metadata.maxzoom) || 14;
+
+                    this.map.addSource(sourceId, {
+                        type: 'vector',
+                        url: `pmtiles://${pmtilesUrl}`,
+                        minzoom,
+                        maxzoom
+                    });
+
+                    // Add fill layer
+                    this.map.addLayer({
+                        id: layerIdFill,
+                        type: 'fill',
+                        source: sourceId,
+                        'source-layer': layerName,
+                        paint: {
+                            'fill-color': this._getStaticLayerColor(layerId),
+                            'fill-opacity': 0.6
+                        }
+                    });
+
+                    // Add line layer
+                    this.map.addLayer({
+                        id: layerIdLine,
+                        type: 'line',
+                        source: sourceId,
+                        'source-layer': layerName,
+                        paint: {
+                            'line-color': '#000000',
+                            'line-width': 0.5,
+                            'line-opacity': 0.3
+                        }
+                    });
+
+                    this.staticLayers.set(layerId, { sourceId, layerIdFill, layerIdLine });
+                    this.logger.success(`Static layer ${layerId} loaded`);
+                }
+                
+                // Show layers
+                this.map.setLayoutProperty(layerIdFill, 'visibility', 'visible');
+                this.map.setLayoutProperty(layerIdLine, 'visibility', 'visible');
+            } else {
+                // Hide layers
+                if (this.map.getLayer(layerIdFill)) {
+                    this.map.setLayoutProperty(layerIdFill, 'visibility', 'none');
+                }
+                if (this.map.getLayer(layerIdLine)) {
+                    this.map.setLayoutProperty(layerIdLine, 'visibility', 'none');
+                }
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error(`Failed to toggle static layer ${layerId}`, error.message);
+            return false;
+        }
+    }
+
+    // LULC class colors
+    lulcClassColors = {
+        'Tree Cover': '#228b22',
+        'Shrubland': '#90ee90',
+        'Grassland': '#adff2f',
+        'Cropland': '#ffd700',
+        'Built_up': '#dc143c',
+        'Sparse Vegetation': '#deb887',
+        'Water Bodies': '#1e90ff',
+        'Mangroves': '#006400'
+    };
+
+    _getStaticLayerColor(layerId) {
+        const colors = {
+            'roadways': '#ff7f00',
+            'default': '#377eb8'
+        };
+        return colors[layerId] || colors['default'];
+    }
+
+    async toggleLulcClasses(selectedClasses) {
+        if (!this.map) return false;
+
+        const sourceId = 'static-lulc';
+        const layerIdFill = `${sourceId}-fill`;
+        const layerIdLine = `${sourceId}-line`;
+
+        try {
+            if (selectedClasses.length === 0) {
+                // Hide layers if no classes selected
+                if (this.map.getLayer(layerIdFill)) {
+                    this.map.setLayoutProperty(layerIdFill, 'visibility', 'none');
+                }
+                if (this.map.getLayer(layerIdLine)) {
+                    this.map.setLayoutProperty(layerIdLine, 'visibility', 'none');
+                }
+                return true;
+            }
+
+            // Load LULC source if not already loaded
+            if (!this.map.getSource(sourceId)) {
+                const pmtilesUrl = apiBridge.buildStaticLayerUrl('lulc');
+                const p = new pmtiles.PMTiles(pmtilesUrl);
+                const metadata = await p.getMetadata();
+                
+                // Layer name from PMTiles metadata
+                const layerName = metadata.vector_layers?.[0]?.id || 'lulc_output';
+                const minzoom = parseInt(metadata.minzoom) || 0;
+                const maxzoom = parseInt(metadata.maxzoom) || 14;
+
+                this.logger.info(`LULC layer name: ${layerName}`);
+
+                this.map.addSource(sourceId, {
+                    type: 'vector',
+                    url: `pmtiles://${pmtilesUrl}`,
+                    minzoom,
+                    maxzoom
+                });
+
+                // Build color expression based on class names (using 'name' property)
+                const colorExpression = this._buildLulcColorExpression();
+
+                this.map.addLayer({
+                    id: layerIdFill,
+                    type: 'fill',
+                    source: sourceId,
+                    'source-layer': layerName,
+                    paint: {
+                        'fill-color': colorExpression,
+                        'fill-opacity': 0.7
+                    }
+                });
+
+                this.map.addLayer({
+                    id: layerIdLine,
+                    type: 'line',
+                    source: sourceId,
+                    'source-layer': layerName,
+                    paint: {
+                        'line-color': '#000000',
+                        'line-width': 0.5,
+                        'line-opacity': 0.5
+                    }
+                });
+
+                this.staticLayers.set('lulc', { sourceId, layerIdFill, layerIdLine, layerName });
+                this.logger.success('LULC layer loaded');
+            }
+
+            // Build filter for selected classes (using 'name' property)
+            const classFilter = ['in', ['get', 'name'], ['literal', selectedClasses]];
+            
+            this.map.setFilter(layerIdFill, classFilter);
+            this.map.setFilter(layerIdLine, classFilter);
+            this.map.setLayoutProperty(layerIdFill, 'visibility', 'visible');
+            this.map.setLayoutProperty(layerIdLine, 'visibility', 'visible');
+
+            this.logger.info(`LULC showing classes: ${selectedClasses.join(', ')}`);
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to toggle LULC classes', error.message);
+            return false;
+        }
+    }
+
+    _buildLulcColorExpression() {
+        // Use 'name' property from PMTiles
+        const matchExpression = ['match', ['get', 'name']];
+        for (const [className, color] of Object.entries(this.lulcClassColors)) {
+            matchExpression.push(className, color);
+        }
+        matchExpression.push('#808080'); // fallback color
+        return matchExpression;
     }
 
     _setupEventListeners() {
@@ -289,6 +560,7 @@ class MapManager {
         if (this.map.getSource('pmtiles-source')) {
             this.map.removeSource('pmtiles-source');
         }
+        // Note: ward-boundaries source is persistent, don't remove it
     }
 
     _saveMapState() {
@@ -432,14 +704,26 @@ class MapManager {
         this.logger.info(`Changing base style to: ${style}`);
         const mapState = this._saveMapState();
         
+        // Store current layer visibility states
+        const layerStates = this._saveLayerStates();
+        
         this.map.setStyle(this.baseStyles[style]);
 
-        this.map.once('style.load', () => {
+        this.map.once('style.load', async () => {
             this.logger.success('Base style loaded');
             
             // Restore map state
             if (mapState.hasState) {
                 this._restoreMapState(mapState);
+            }
+            
+            // Re-add ward boundaries
+            if (this.wardBoundariesData) {
+                await this.addWardBoundary();
+                if (!layerStates.wardBoundaries) {
+                    this.map.setLayoutProperty('ward-fill', 'visibility', 'none');
+                    this.map.setLayoutProperty('ward-outline', 'visibility', 'none');
+                }
             }
             
             // Re-add PMTiles layers
@@ -458,12 +742,157 @@ class MapManager {
                             'line-opacity': 0
                         }
                     });
+                    if (!layerStates.floodDepth) {
+                        this.map.setLayoutProperty('pmtiles-layer', 'visibility', 'none');
+                    }
                     this.logger.success('PMTiles layers restored');
                 } catch (error) {
-                    this.logger.error('Failed to restore layers', error.message);
+                    this.logger.error('Failed to restore PMTiles layers', error.message);
                 }
             }
+            
+            // Re-add static layers that were visible
+            for (const [layerId, layerInfo] of this.staticLayers) {
+                if (layerId === 'lulc') {
+                    // Re-add LULC with its filter
+                    await this._restoreLulcLayer(layerStates.lulcClasses);
+                } else {
+                    await this._restoreStaticLayer(layerId, layerInfo, layerStates[layerId]);
+                }
+            }
+            
+            eventBus.emit(AppEvents.MAP_STYLE_CHANGED, { style });
         });
+    }
+
+    _saveLayerStates() {
+        const states = {
+            wardBoundaries: this.map.getLayer('ward-outline') ? 
+                this.map.getLayoutProperty('ward-outline', 'visibility') !== 'none' : false,
+            floodDepth: this.map.getLayer('pmtiles-layer') ? 
+                this.map.getLayoutProperty('pmtiles-layer', 'visibility') !== 'none' : true,
+            lulcClasses: []
+        };
+        
+        // Check LULC filter to get selected classes (filter uses 'name' property)
+        if (this.map.getLayer('static-lulc-fill')) {
+            const filter = this.map.getFilter('static-lulc-fill');
+            // Filter format: ['in', ['get', 'name'], ['literal', [...classes]]]
+            if (filter && filter[2] && filter[2][1]) {
+                states.lulcClasses = filter[2][1];
+            }
+            states.lulcVisible = this.map.getLayoutProperty('static-lulc-fill', 'visibility') !== 'none';
+        }
+        
+        // Check other static layers
+        for (const [layerId] of this.staticLayers) {
+            if (layerId !== 'lulc') {
+                const fillLayerId = `static-${layerId}-fill`;
+                states[layerId] = this.map.getLayer(fillLayerId) ? 
+                    this.map.getLayoutProperty(fillLayerId, 'visibility') !== 'none' : false;
+            }
+        }
+        
+        return states;
+    }
+
+    async _restoreLulcLayer(selectedClasses) {
+        if (!selectedClasses || selectedClasses.length === 0) return;
+        
+        const layerInfo = this.staticLayers.get('lulc');
+        if (!layerInfo) return;
+        
+        try {
+            const pmtilesUrl = apiBridge.buildStaticLayerUrl('lulc');
+            
+            this.map.addSource(layerInfo.sourceId, {
+                type: 'vector',
+                url: `pmtiles://${pmtilesUrl}`,
+                minzoom: 0,
+                maxzoom: 14
+            });
+
+            const colorExpression = this._buildLulcColorExpression();
+            // Use 'name' property for filter
+            const classFilter = ['in', ['get', 'name'], ['literal', selectedClasses]];
+
+            this.map.addLayer({
+                id: layerInfo.layerIdFill,
+                type: 'fill',
+                source: layerInfo.sourceId,
+                'source-layer': layerInfo.layerName,
+                filter: classFilter,
+                paint: {
+                    'fill-color': colorExpression,
+                    'fill-opacity': 0.7
+                }
+            });
+
+            this.map.addLayer({
+                id: layerInfo.layerIdLine,
+                type: 'line',
+                source: layerInfo.sourceId,
+                'source-layer': layerInfo.layerName,
+                filter: classFilter,
+                paint: {
+                    'line-color': '#000000',
+                    'line-width': 0.5,
+                    'line-opacity': 0.5
+                }
+            });
+            
+            this.logger.success('LULC layer restored');
+        } catch (error) {
+            this.logger.error('Failed to restore LULC layer', error.message);
+        }
+    }
+
+    async _restoreStaticLayer(layerId, layerInfo, visible) {
+        if (!visible) return;
+        
+        try {
+            const pmtilesUrl = apiBridge.buildStaticLayerUrl(layerId);
+            const p = new pmtiles.PMTiles(pmtilesUrl);
+            const metadata = await p.getMetadata();
+            
+            const layerName = metadata.vector_layers?.[0]?.id || 'default';
+            const minzoom = parseInt(metadata.minzoom) || 0;
+            const maxzoom = parseInt(metadata.maxzoom) || 14;
+
+            this.map.addSource(layerInfo.sourceId, {
+                type: 'vector',
+                url: `pmtiles://${pmtilesUrl}`,
+                minzoom,
+                maxzoom
+            });
+
+            this.map.addLayer({
+                id: layerInfo.layerIdFill,
+                type: 'fill',
+                source: layerInfo.sourceId,
+                'source-layer': layerName,
+                paint: {
+                    'fill-color': this._getStaticLayerColor(layerId),
+                    'fill-opacity': 0.6
+                }
+            });
+
+            this.map.addLayer({
+                id: layerInfo.layerIdLine,
+                type: 'line',
+                source: layerInfo.sourceId,
+                'source-layer': layerName,
+                paint: {
+                    'line-color': '#000000',
+                    'line-width': 0.5,
+                    'line-opacity': 0.3
+                }
+            });
+            
+            this.logger.success(`Static layer ${layerId} restored`);
+        } catch (error) {
+            this.logger.error(`Failed to restore static layer ${layerId}`, error.message);
+        }
     }
 
     updateStats() {

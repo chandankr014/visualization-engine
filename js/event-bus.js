@@ -126,6 +126,7 @@ const AppEvents = {
     MAP_READY: 'map:ready',
     MAP_ERROR: 'map:error',
     MAP_STYLE_CHANGE: 'map:style-change',
+    MAP_STYLE_CHANGED: 'map:style-changed',
     MAP_LAYER_LOADED: 'map:layer-loaded',
     MAP_LAYER_ERROR: 'map:layer-error',
     MAP_CLICK: 'map:click',
@@ -134,6 +135,7 @@ const AppEvents = {
     // UI events
     OPACITY_CHANGE: 'ui:opacity-change',
     LAYER_TYPE_CHANGE: 'ui:layer-type-change',
+    LAYER_TOGGLE: 'ui:layer-toggle',
     LOADING_START: 'ui:loading-start',
     LOADING_END: 'ui:loading-end',
     
@@ -142,7 +144,14 @@ const AppEvents = {
     CURSOR_MOVE: 'stats:cursor-move',
     
     // Log events
-    LOG_ENTRY: 'log:entry'
+    LOG_ENTRY: 'log:entry',
+    
+    // Polygon Analytics events
+    POLYGON_DRAW_START: 'polygon:draw-start',
+    POLYGON_DRAW_END: 'polygon:draw-end',
+    POLYGON_CLEARED: 'polygon:cleared',
+    POLYGON_ANALYSIS_COMPLETE: 'polygon:analysis-complete',
+    POLYGON_TIMESERIES_COMPLETE: 'polygon:timeseries-complete'
 };
 
 // Export singleton instance

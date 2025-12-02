@@ -44,6 +44,20 @@ class APIBridge {
     }
 
     /**
+     * Get list of static layers
+     */
+    async getStaticLayers() {
+        return this._cachedRequest('/api/static-layers', 'static-layers');
+    }
+
+    /**
+     * Get ward boundaries GeoJSON
+     */
+    async getWardBoundaries() {
+        return this._cachedRequest('/api/ward-boundaries', 'ward-boundaries');
+    }
+
+    /**
      * Health check endpoint
      */
     async healthCheck() {
@@ -54,7 +68,14 @@ class APIBridge {
      * Build PMTiles URL for a given time slot
      */
     buildPMTilesUrl(timeSlot) {
-        return `${this.baseUrl}/pmtiles/PMTile_${timeSlot}.pmtiles`;
+        return `${this.baseUrl}/pmtiles/flood/PMTile_${timeSlot}.pmtiles`;
+    }
+
+    /**
+     * Build static layer PMTiles URL
+     */
+    buildStaticLayerUrl(layerId) {
+        return `${this.baseUrl}/pmtiles/static/${layerId}.pmtiles`;
     }
 
     /**

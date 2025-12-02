@@ -12,6 +12,7 @@ import StatsTracker from './stats-tracker.js';
 import TimeController from './time-controller.js';
 import UIController from './ui-controller.js';
 import MapManager from './map-manager.js';
+import PolygonAnalytics from './polygon-analytics.js';
 
 /**
  * Default Configuration
@@ -23,7 +24,7 @@ const DEFAULT_CONFIG = {
     initialZoom: 11,
     initialStyle: 'light',
     statsUpdateInterval: 2000,
-    playbackSpeed: 1500
+    playbackSpeed: 3000
 };
 
 /**
@@ -121,6 +122,9 @@ class PMTilesViewerApp {
         // Map Manager
         this.modules.mapManager = new MapManager(this.config, logger, this.modules.statsTracker);
         
+        // Polygon Analytics (initialized after map is ready)
+        this.modules.polygonAnalytics = null;
+        
         logger.success('All modules initialized');
     }
 
@@ -154,6 +158,36 @@ class PMTilesViewerApp {
         // Layer type change events
         eventBus.on(AppEvents.LAYER_TYPE_CHANGE, (layerType) => {
             mapManager.changeLayerType(layerType);
+        });
+
+        // Layer toggle events
+        eventBus.on(AppEvents.LAYER_TOGGLE, async ({ layer, visible, classes }) => {
+            if (layer === 'lulc') {
+                logger.info(`LULC classes: ${classes?.length ? classes.join(', ') : 'none'}`);
+                await mapManager.toggleLulcClasses(classes || []);
+            } else {
+                logger.info(`Toggling ${layer}: ${visible ? 'on' : 'off'}`);
+                
+                if (layer === 'ward-boundaries') {
+                    if (visible) {
+                        await mapManager.loadWardBoundaries();
+                        await mapManager.addWardBoundary();
+                    } else {
+                        if (mapManager.map.getLayer('ward-fill')) {
+                            mapManager.map.setLayoutProperty('ward-fill', 'visibility', 'none');
+                        }
+                        if (mapManager.map.getLayer('ward-outline')) {
+                            mapManager.map.setLayoutProperty('ward-outline', 'visibility', 'none');
+                        }
+                    }
+                } else if (layer === 'flood-depth') {
+                    if (mapManager.map.getLayer('pmtiles-layer')) {
+                        mapManager.map.setLayoutProperty('pmtiles-layer', 'visibility', visible ? 'visible' : 'none');
+                    }
+                } else if (layer === 'roadways') {
+                    await mapManager.toggleStaticLayer(layer, visible);
+                }
+            }
         });
         
         // Map style change events
@@ -206,6 +240,11 @@ class PMTilesViewerApp {
         // Wait for map to load
         return new Promise((resolve) => {
             map.on('load', async () => {
+                // Load ward boundaries first
+                uiController.showLoading('Loading ward boundaries...');
+                await mapManager.loadWardBoundaries();
+                await mapManager.addWardBoundary();
+                
                 const initialTimeSlot = timeController.getCurrentTimeSlot();
                 
                 if (initialTimeSlot) {
@@ -220,8 +259,13 @@ class PMTilesViewerApp {
                         logger.error('Failed to load initial data');
                     }
                 } else {
+                    uiController.hideLoading();
                     logger.warning('No time slots available');
                 }
+                
+                // Initialize Polygon Analytics after map is fully loaded
+                this.modules.polygonAnalytics = new PolygonAnalytics(mapManager, timeController, logger);
+                this.modules.polygonAnalytics.init();
                 
                 resolve();
             });
@@ -265,6 +309,14 @@ class PMTilesViewerApp {
         console.log('  window.pmtilesApp.downloadLogs()  - Download logs file');
         console.log('  window.pmtilesApp.getStats()      - Get current statistics');
         console.log('  window.pmtilesApp.refreshConfig() - Reload server config');
+        console.log('%c Keyboard Shortcuts:', 'font-weight: bold; font-size: 14px;');
+        console.log('  P          - Toggle polygon draw mode');
+        console.log('  Enter      - Finish drawing polygon');
+        console.log('  Escape     - Cancel drawing');
+        console.log('  Space      - Play/Pause time animation');
+        console.log('  ←/→        - Previous/Next time slot');
+        console.log('  +/-        - Increase/Decrease opacity');
+        console.log('  B          - Toggle layer type (multiclass/binary)');
     }
 
     // Public API methods
@@ -334,6 +386,7 @@ class PMTilesViewerApp {
      */
     destroy() {
         this._stopStatsUpdater();
+        this.modules.polygonAnalytics?.destroy();
         this.modules.mapManager?.destroy();
         this.modules.timeController?.destroy();
         eventBus.clear();
