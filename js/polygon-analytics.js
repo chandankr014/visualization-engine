@@ -33,7 +33,8 @@ class PolygonAnalytics {
             'depth', 'Depth', 'DEPTH', 'depth_m', 'Depth_m',
             'water_depth', 'Water Depth', 'Water_Depth',
             'Total water', 'Total_water', 'TotalWater',
-            'Total wate', 'Total_wate', 'Total watr'
+            'Total wate', 'Total_wate', 'Total watr',
+            'Total_water_depth'
         ];
         
         // Bind methods

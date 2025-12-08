@@ -185,7 +185,7 @@ class PMTilesViewerApp {
                         mapManager.map.setLayoutProperty('pmtiles-layer', 'visibility', visible ? 'visible' : 'none');
                     }
                 } else if (layer === 'roadways') {
-                    await mapManager.toggleStaticLayer(layer, visible);
+                    await mapManager.toggleRoadways(visible);
                 }
             }
         });

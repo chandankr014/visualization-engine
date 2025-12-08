@@ -46,6 +46,7 @@ class UIController {
             lulcDropdown: document.getElementById('lulcDropdown'),
             lulcDropdownBtn: document.getElementById('lulcDropdownBtn'),
             lulcDropdownMenu: document.getElementById('lulcDropdownMenu'),
+            lulcSelectAll: document.getElementById('lulcSelectAll'),
             lulcClassToggles: document.querySelectorAll('.lulc-class')
         };
         
@@ -77,7 +78,7 @@ class UIController {
     _setupEventListeners() {
         const { opacitySlider, baseMapStyle, floodLayerType, 
                 toggleWardBoundaries, toggleFloodDepth, toggleRoadways, 
-                lulcDropdown, lulcDropdownBtn, lulcClassToggles } = this.elements;
+                lulcDropdown, lulcDropdownBtn, lulcSelectAll, lulcClassToggles } = this.elements;
         
         // Opacity slider with debounce
         let opacityTimeout;
@@ -127,24 +128,57 @@ class UIController {
             }
         });
 
+        // LULC Select All toggle
+        lulcSelectAll?.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            lulcClassToggles?.forEach(cb => {
+                cb.checked = isChecked;
+            });
+            this._updateLulcSelection();
+        });
+
         // LULC class toggles
         lulcClassToggles?.forEach(checkbox => {
             checkbox.addEventListener('change', () => {
-                const selectedClasses = Array.from(lulcClassToggles)
-                    .filter(cb => cb.checked)
-                    .map(cb => cb.dataset.class);
-                
-                // Update dropdown button text
-                const btnText = lulcDropdownBtn?.querySelector('span:first-child');
-                if (btnText) {
-                    btnText.textContent = selectedClasses.length > 0 
-                        ? `${selectedClasses.length} class(es) selected`
-                        : 'Select Land Use Classes';
-                }
-                
-                eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'lulc', classes: selectedClasses });
+                this._updateLulcSelection();
+                // Update select all checkbox state
+                this._updateSelectAllState();
             });
         });
+    }
+
+    /**
+     * Update LULC selection and emit event
+     */
+    _updateLulcSelection() {
+        const { lulcDropdownBtn, lulcClassToggles } = this.elements;
+        const selectedClasses = Array.from(lulcClassToggles)
+            .filter(cb => cb.checked)
+            .map(cb => cb.dataset.class);
+        
+        // Update dropdown button text
+        const btnText = lulcDropdownBtn?.querySelector('span:first-child');
+        if (btnText) {
+            btnText.textContent = selectedClasses.length > 0 
+                ? `${selectedClasses.length} class(es) selected`
+                : 'Select Land Use Classes';
+        }
+        
+        eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'lulc', classes: selectedClasses });
+    }
+
+    /**
+     * Update select all checkbox based on individual selections
+     */
+    _updateSelectAllState() {
+        const { lulcSelectAll, lulcClassToggles } = this.elements;
+        if (!lulcSelectAll || !lulcClassToggles) return;
+        
+        const total = lulcClassToggles.length;
+        const checked = Array.from(lulcClassToggles).filter(cb => cb.checked).length;
+        
+        lulcSelectAll.checked = checked === total;
+        lulcSelectAll.indeterminate = checked > 0 && checked < total;
     }
 
     /**

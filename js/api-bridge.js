@@ -58,6 +58,13 @@ class APIBridge {
     }
 
     /**
+     * Get roadways GeoJSON
+     */
+    async getRoadways() {
+        return this._cachedRequest('/api/roadways', 'roadways');
+    }
+
+    /**
      * Health check endpoint
      */
     async healthCheck() {

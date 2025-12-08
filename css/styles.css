@@ -444,15 +444,45 @@ select:focus {
     border: 2px solid var(--color-border);
     border-top: none;
     border-radius: 0 0 var(--radius-md) var(--radius-md);
-    max-height: 240px;
+    max-height: 280px;
     overflow-y: auto;
-    z-index: 100;
+    z-index: 1000;
     display: none;
-    box-shadow: var(--shadow-md);
+    box-shadow: var(--shadow-lg);
 }
 
 .dropdown-multiselect.open .dropdown-menu {
     display: block;
+}
+
+/* Ensure LULC section has proper stacking context */
+.control-section:has(.dropdown-multiselect) {
+    position: relative;
+    z-index: 10;
+}
+
+.control-section:has(.dropdown-multiselect.open) {
+    z-index: 100;
+}
+
+.dropdown-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: 4px 0;
+}
+
+.select-all-item {
+    background: #f0f9ff;
+    font-weight: 600;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.select-all-item:hover {
+    background: #e0f2fe !important;
+}
+
+.select-all-text {
+    color: var(--color-primary);
 }
 
 .dropdown-item {

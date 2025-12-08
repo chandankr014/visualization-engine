@@ -111,6 +111,29 @@ class PMTilesAPI:
         except Exception as e:
             return {"success": False, "error": str(e)}
     
+    def get_roadways(self) -> dict:
+        """Get roadways GeoJSON."""
+        city_dir = self.base_dir / CITY_DIR
+        roadways_file = city_dir / "ggn_roadways_clean.geojson"
+        
+        if not roadways_file.exists():
+            return {"success": False, "error": "Roadways file not found"}
+        
+        try:
+            with open(roadways_file, 'r', encoding='utf-8') as f:
+                geojson_data = json.load(f)
+            
+            stat = roadways_file.stat()
+            return {
+                "success": True,
+                "data": geojson_data,
+                "size": stat.st_size,
+                "sizeFormatted": self._format_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
     def get_file_info(self, filename: str) -> dict:
         """Get detailed info about a specific PMTiles file."""
         file_path = self.pmtiles_dir / filename
@@ -221,6 +244,8 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self._handle_api_static_layers()
         elif path == '/api/ward-boundaries':
             self._handle_api_ward_boundaries()
+        elif path == '/api/roadways':
+            self._handle_api_roadways()
         elif path == '/api/health':
             self._handle_api_health()
         elif path == '/api/config':
@@ -252,6 +277,11 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
     def _handle_api_ward_boundaries(self):
         """Return ward boundaries GeoJSON."""
         response = self.api.get_ward_boundaries()
+        self._send_json_response(response, 200 if response.get("success") else 404)
+    
+    def _handle_api_roadways(self):
+        """Return roadways GeoJSON."""
+        response = self.api.get_roadways()
         self._send_json_response(response, 200 if response.get("success") else 404)
     
     def _handle_api_config(self):
@@ -439,4 +469,4 @@ def run_server(port: int = DEFAULT_PORT, directory: str = None):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
-    run_server(port)
+    run_server(9201)

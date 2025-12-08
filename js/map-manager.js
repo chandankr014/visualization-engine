@@ -50,7 +50,8 @@ class MapManager {
             'depth', 'Depth', 'DEPTH', 'depth_m', 'Depth_m',
             'water_depth', 'Water Depth', 'Water_Depth',
             'Total water', 'Total_water', 'TotalWater',
-            'Total wate', 'Total_wate', 'Total watr'
+            'Total wate', 'Total_wate', 'Total watr',
+            'Total_water_depth'
         ];
         
         // Throttled functions
@@ -276,6 +277,64 @@ class MapManager {
             'default': '#377eb8'
         };
         return colors[layerId] || colors['default'];
+    }
+
+    /**
+     * Toggle roadways layer (GeoJSON-based)
+     */
+    async toggleRoadways(visible) {
+        if (!this.map) return false;
+
+        const sourceId = 'roadways-source';
+        const layerId = 'roadways-layer';
+
+        try {
+            if (visible) {
+                // Load roadways if not already loaded
+                if (!this.map.getSource(sourceId)) {
+                    this.logger.info('Loading roadways GeoJSON...');
+                    const response = await apiBridge.getRoadways();
+                    
+                    if (!response.success || !response.data) {
+                        throw new Error('Failed to load roadways data');
+                    }
+
+                    this.map.addSource(sourceId, {
+                        type: 'geojson',
+                        data: response.data
+                    });
+
+                    this.map.addLayer({
+                        id: layerId,
+                        type: 'line',
+                        source: sourceId,
+                        paint: {
+                            'line-color': '#ff7f00',
+                            'line-width': [
+                                'interpolate', ['linear'], ['zoom'],
+                                10, 1,
+                                14, 2,
+                                18, 4
+                            ],
+                            'line-opacity': 0.8
+                        }
+                    });
+
+                    this.logger.success('Roadways layer loaded');
+                }
+                
+                this.map.setLayoutProperty(layerId, 'visibility', 'visible');
+            } else {
+                if (this.map.getLayer(layerId)) {
+                    this.map.setLayoutProperty(layerId, 'visibility', 'none');
+                }
+            }
+
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to toggle roadways layer', error.message);
+            return false;
+        }
     }
 
     async toggleLulcClasses(selectedClasses) {
