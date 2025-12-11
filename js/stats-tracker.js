@@ -25,7 +25,6 @@ class StatsTracker {
         // Stats state
         this.stats = {
             zoom: 0,
-            loadedTiles: 0,
             visibleFeatures: 0,
             cursorLat: 0,
             cursorLng: 0,
@@ -78,14 +77,6 @@ class StatsTracker {
     updateZoom(zoom) {
         this.stats.zoom = zoom;
         this._scheduleUpdate('zoom', zoom, v => v.toFixed(2));
-    }
-
-    /**
-     * Update loaded tiles count
-     */
-    updateTiles(count) {
-        this.stats.loadedTiles = count;
-        this._scheduleUpdate('tiles', count, v => String(v));
     }
 
     /**
@@ -186,7 +177,6 @@ class StatsTracker {
     reset() {
         this.stats = {
             zoom: 0,
-            loadedTiles: 0,
             visibleFeatures: 0,
             cursorLat: 0,
             cursorLng: 0,
@@ -200,7 +190,6 @@ class StatsTracker {
         
         // Update all displays
         this.updateZoom(0);
-        this.updateTiles(0);
         this.updateFeatures(0);
         this.updatePMTilesSize(0);
         this.updateLoadTime(0);

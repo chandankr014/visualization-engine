@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Interactive PMTiles geospatial data viewer for flood depth visualization">
+    <meta name="description" content="AIResQ ClimSols - Advanced Flood Depth Visualization Engine">
     <meta name="theme-color" content="#2563eb">
-    <title>PMTiles Geospatial Viewer</title>
+    <title>AIResQ ClimSols | Flood Visualization Engine</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
     
     <!-- Preconnect to CDNs for faster loading -->
     <link rel="preconnect" href="https://unpkg.com" crossorigin>
@@ -26,19 +29,60 @@
         <!-- Sidebar Controls -->
         <aside class="sidebar" role="complementary" aria-label="Controls">
             <header class="header">
-                <h1>Flood Visualization Engine</h1>
-                <p class="subtitle">Interactive and Optimized</p>
+                <div class="header-branding">
+                    <div class="brand-logo">
+                        <div class="logo-wrap" style="background-color:#0A2534;padding:6px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;">
+                            <img src="favicon.ico" alt="AIResQ ClimSols logo" class="logo-icon" width="40" height="40" style="display:block;">
+                        </div>
+                        <div class="brand-text">
+                            <h1 class="brand-name">AIResQ ClimSols</h1>
+                            <p class="brand-tagline">Flood Visualization Engine</p>
+                        </div>
+                    </div>
+                </div>
             </header>
+
+            <!-- Simulation Information Card -->
+            <section class="section info-card-section">
+                <div class="info-card">
+                    <!-- <div class="info-card-header">
+                        <span class="info-icon">📍</span>
+                        <h4>Simulation Details</h4>
+                    </div> -->
+                    <div class="info-card-body">
+                        <div class="info-row">
+                            <span class="info-label">Location</span>
+                            <span class="info-value" id="infoLocation">Loading...</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Start Time</span>
+                            <span class="info-value" id="infoStartTime">--:--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">End Time</span>
+                            <span class="info-value" id="infoEndTime">--:--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Interval</span>
+                            <span class="info-value" id="infoInterval">-- min</span>
+                        </div>
+                        <!-- <div class="info-row">
+                            <span class="info-label">Time Steps</span>
+                            <span class="info-value" id="infoTimeSteps">--</span>
+                        </div> -->
+                    </div>
+                </div>
+            </section>
 
             <!-- Time Slider Section -->
             <section class="section time-section" aria-labelledby="time-section-title">
                 <div class="section-header">
-                    <span class="icon" aria-hidden="true">🕐</span>
-                    <h3 id="time-section-title">Time Slider</h3>
+                    <span class="icon" aria-hidden="true">⏱️</span>
+                    <h3 id="time-section-title">Time Control</h3>
                 </div>
                 <div class="time-controls">
                     <div class="time-info">
-                        <span>Time Slot:</span>
+                        <span class="time-label">Current Time</span>
                         <span class="badge" id="currentTime" aria-live="polite">Loading...</span>
                     </div>
                     <div class="playback-controls">
@@ -79,7 +123,7 @@
                 <div class="controls">
                     <div class="control-group">
                         <label for="opacitySlider">
-                            Opacity: <span id="opacityValue">80%</span>
+                            Opacity: <span id="opacityValue">100%</span>
                         </label>
                         <div class="slider-container">
                             <input 
@@ -87,9 +131,9 @@
                                 id="opacitySlider" 
                                 min="0" 
                                 max="100" 
-                                value="80" 
+                                value="100" 
                                 aria-label="Layer opacity"
-                                aria-valuetext="80 percent"
+                                aria-valuetext="100 percent"
                             >
                         </div>
                     </div>
@@ -138,6 +182,12 @@
                             <span>Roadways</span>
                         </label>
                     </div>
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleHotspots">
+                            <span>Hotspots</span>
+                        </label>
+                    </div>
                 </div>
             </section>
 
@@ -164,7 +214,7 @@
                                 <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Built_up"><span class="lulc-color" style="background:#dc143c"></span>Built-up</label>
                                 <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Sparse Vegetation"><span class="lulc-color" style="background:#deb887"></span>Sparse Vegetation</label>
                                 <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Water Bodies"><span class="lulc-color" style="background:#1e90ff"></span>Water Bodies</label>
-                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Mangroves"><span class="lulc-color" style="background:#006400"></span>Mangroves</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Mangroves"><span class="lulc-color" style="background:#134404"></span>Mangroves</label>
                             </div>
                         </div>
                     </div>
@@ -181,10 +231,6 @@
                     <div class="stat-item">
                         <dt class="stat-label">Current Zoom:</dt>
                         <dd class="stat-value" id="currentZoom">0.00</dd>
-                    </div>
-                    <div class="stat-item">
-                        <dt class="stat-label">Loaded Tiles:</dt>
-                        <dd class="stat-value" id="loadedTiles">0</dd>
                     </div>
                     <div class="stat-item">
                         <dt class="stat-label">Visible Features:</dt>

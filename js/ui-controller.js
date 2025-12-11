@@ -43,6 +43,7 @@ class UIController {
             toggleWardBoundaries: document.getElementById('toggleWardBoundaries'),
             toggleFloodDepth: document.getElementById('toggleFloodDepth'),
             toggleRoadways: document.getElementById('toggleRoadways'),
+            toggleHotspots: document.getElementById('toggleHotspots'),
             lulcDropdown: document.getElementById('lulcDropdown'),
             lulcDropdownBtn: document.getElementById('lulcDropdownBtn'),
             lulcDropdownMenu: document.getElementById('lulcDropdownMenu'),
@@ -52,7 +53,7 @@ class UIController {
         
         // State
         this.state = {
-            opacity: 80,
+            opacity: 100, // Default to 100% opacity
             style: 'openstreetmap',
             layerType: 'multiclass',
             isLoading: false
@@ -69,6 +70,11 @@ class UIController {
     _init() {
         this._setupEventListeners();
         this._setupKeyboardShortcuts();
+        // Set initial opacity to 100%
+        if (this.elements.opacitySlider) {
+            this.elements.opacitySlider.value = 100;
+            this._updateOpacityDisplay(100);
+        }
         this.logger.info('UI controller initialized');
     }
 
@@ -77,7 +83,7 @@ class UIController {
      */
     _setupEventListeners() {
         const { opacitySlider, baseMapStyle, floodLayerType, 
-                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, 
+                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, toggleHotspots,
                 lulcDropdown, lulcDropdownBtn, lulcSelectAll, lulcClassToggles } = this.elements;
         
         // Opacity slider with debounce
@@ -113,6 +119,10 @@ class UIController {
 
         toggleRoadways?.addEventListener('change', (e) => {
             eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'roadways', visible: e.target.checked });
+        });
+
+        toggleHotspots?.addEventListener('change', (e) => {
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'hotspots', visible: e.target.checked });
         });
 
         // LULC dropdown toggle

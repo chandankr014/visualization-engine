@@ -1,6 +1,7 @@
 /**
  * Time Controller Module
- * Manages time slot selection and playback with dynamic slot discovery.
+ * Manages time slot selection and playback for time-series flood data.
+ * Time slots are property names in the master PMTiles file (e.g., D202512101000).
  */
 
 import { eventBus, AppEvents } from './event-bus.js';
@@ -10,10 +11,11 @@ class TimeController {
     constructor(config, logger) {
         this.logger = logger;
         this.timeSlots = config.timeSlots || [];
+        this.depthPropertyPrefix = config.depthPropertyPrefix || 'D';
         this.currentIndex = 0;
         this.isPlaying = false;
         this.playbackInterval = null;
-        this.playbackSpeed = config.playbackSpeed || 1500;
+        this.playbackSpeed = config.playbackSpeed || 500;
         
         // DOM elements
         this.elements = {
@@ -48,6 +50,7 @@ class TimeController {
             const response = await apiBridge.getConfig();
             if (response.success && response.config?.timeSlots?.length > 0) {
                 this.timeSlots = response.config.timeSlots;
+                this.depthPropertyPrefix = response.config.depthPropertyPrefix || 'D';
                 this.logger.info(`Loaded ${this.timeSlots.length} time slots from server`);
                 eventBus.emit(AppEvents.TIME_SLOTS_UPDATED, this.timeSlots);
             }
@@ -134,23 +137,29 @@ class TimeController {
 
     /**
      * Format time slot for end labels (HH:MM)
+     * Time slot format: D{YYYYMMDDHHmm} e.g., D202512101000
      */
     _formatTimeSlot(timeSlot) {
-        if (!timeSlot || timeSlot.length < 12) return timeSlot || '--:--';
-        return `${timeSlot.substring(8, 10)}:${timeSlot.substring(10, 12)}`;
+        if (!timeSlot || timeSlot.length < 13) return timeSlot || '--:--';
+        // Skip prefix 'D' and get hours/minutes
+        const timeStr = timeSlot.substring(1); // Remove 'D' prefix
+        return `${timeStr.substring(8, 10)}:${timeStr.substring(10, 12)}`;
     }
 
     /**
      * Format time slot for display (full date-time)
+     * Time slot format: D{YYYYMMDDHHmm} e.g., D202512101000
      */
     _formatDisplayTime(timeSlot) {
-        if (!timeSlot || timeSlot.length < 12) return timeSlot || 'N/A';
+        if (!timeSlot || timeSlot.length < 13) return timeSlot || 'N/A';
         
-        const year = timeSlot.substring(0, 4);
-        const month = timeSlot.substring(4, 6);
-        const day = timeSlot.substring(6, 8);
-        const hour = timeSlot.substring(8, 10);
-        const minute = timeSlot.substring(10, 12);
+        // Skip prefix 'D'
+        const timeStr = timeSlot.substring(1);
+        const year = timeStr.substring(0, 4);
+        const month = timeStr.substring(4, 6);
+        const day = timeStr.substring(6, 8);
+        const hour = timeStr.substring(8, 10);
+        const minute = timeStr.substring(10, 12);
         
         return `${day}/${month}/${year} ${hour}:${minute}`;
     }

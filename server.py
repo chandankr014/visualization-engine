@@ -5,7 +5,7 @@ Run with: python server.py [port]
 Features:
 - Range request support for efficient PMTiles streaming
 - REST API for PMTiles metadata and file discovery
-- Dynamic time slot discovery from filesystem
+- Time series flood data from single master PMTiles file
 - CORS support for development
 - Clean error handling
 """
@@ -19,12 +19,16 @@ from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 
+# Import configuration
+import config
+
 # Configuration
 DEFAULT_PORT = 8000
 PMTILES_DIR = "pmtiles"
 PMTILES_FLOOD_DIR = "pmtiles/flood"
 PMTILES_STATIC_DIR = "pmtiles/static"
 CITY_DIR = "city"
+MASTER_PMTILES_FILE = config.MASTER_PMTILES_FILE
 
 
 class PMTilesAPI:
@@ -33,32 +37,47 @@ class PMTilesAPI:
     def __init__(self, base_dir: str):
         self.base_dir = Path(base_dir)
         self.pmtiles_dir = self.base_dir / PMTILES_DIR
+        self.master_file_path = self.base_dir / MASTER_PMTILES_FILE
+        self.time_slots = config.get_time_slots()
+    
+    def get_master_file_info(self) -> dict:
+        """Get info about the master PMTiles file."""
+        if not self.master_file_path.exists():
+            return {"success": False, "error": "Master PMTiles file not found"}
+        
+        stat = self.master_file_path.stat()
+        return {
+            "success": True,
+            "filename": self.master_file_path.name,
+            "path": f"/{MASTER_PMTILES_FILE}",
+            "size": stat.st_size,
+            "sizeFormatted": self._format_size(stat.st_size),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+        }
     
     def get_available_files(self) -> dict:
-        """Discover all available PMTiles files with metadata (flood only)."""
-        files = []
-        flood_dir = self.base_dir / PMTILES_FLOOD_DIR
-        if flood_dir.exists():
-            for pmtile_path in flood_dir.glob("*.pmtiles"):
-                stat = pmtile_path.stat()
-                name = pmtile_path.stem
-                time_slot = name.replace("PMTile_", "") if name.startswith("PMTile_") else name
-                
-                files.append({
-                    "filename": pmtile_path.name,
-                    "timeSlot": time_slot,
-                    "size": stat.st_size,
-                    "sizeFormatted": self._format_size(stat.st_size),
-                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "path": f"/{PMTILES_FLOOD_DIR}/{pmtile_path.name}"
-                })
-        
-        files.sort(key=lambda x: x["timeSlot"])
+        """Return info about master PMTiles file (for backward compatibility)."""
+        master_info = self.get_master_file_info()
+        if not master_info.get("success"):
+            return {
+                "success": False,
+                "count": 0,
+                "files": [],
+                "error": master_info.get("error", "Master file not found"),
+                "timestamp": datetime.now().isoformat()
+            }
         
         return {
             "success": True,
-            "count": len(files),
-            "files": files,
+            "count": 1,
+            "files": [{
+                "filename": master_info["filename"],
+                "timeSlot": "master",
+                "size": master_info["size"],
+                "sizeFormatted": master_info["sizeFormatted"],
+                "modified": master_info["modified"],
+                "path": master_info["path"]
+            }],
             "timestamp": datetime.now().isoformat()
         }
     
@@ -124,6 +143,52 @@ class PMTilesAPI:
                 geojson_data = json.load(f)
             
             stat = roadways_file.stat()
+            return {
+                "success": True,
+                "data": geojson_data,
+                "size": stat.st_size,
+                "sizeFormatted": self._format_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_hotspots(self) -> dict:
+        """Get hotspots GeoJSON."""
+        city_dir = self.base_dir / CITY_DIR
+        hotspots_file = city_dir / "hotspots.geojson"
+        
+        if not hotspots_file.exists():
+            return {"success": False, "error": "Hotspots file not found"}
+        
+        try:
+            with open(hotspots_file, 'r', encoding='utf-8') as f:
+                geojson_data = json.load(f)
+            
+            stat = hotspots_file.stat()
+            return {
+                "success": True,
+                "data": geojson_data,
+                "size": stat.st_size,
+                "sizeFormatted": self._format_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_hotspots(self) -> dict:
+        """Get hotspots GeoJSON."""
+        city_dir = self.base_dir / CITY_DIR
+        hotspots_file = city_dir / "hotspots.geojson"
+        
+        if not hotspots_file.exists():
+            return {"success": False, "error": "Hotspots file not found"}
+        
+        try:
+            with open(hotspots_file, 'r', encoding='utf-8') as f:
+                geojson_data = json.load(f)
+            
+            stat = hotspots_file.stat()
             return {
                 "success": True,
                 "data": geojson_data,
@@ -246,6 +311,8 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self._handle_api_ward_boundaries()
         elif path == '/api/roadways':
             self._handle_api_roadways()
+        elif path == '/api/hotspots':
+            self._handle_api_hotspots()
         elif path == '/api/health':
             self._handle_api_health()
         elif path == '/api/config':
@@ -284,20 +351,35 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
         response = self.api.get_roadways()
         self._send_json_response(response, 200 if response.get("success") else 404)
     
+    def _handle_api_hotspots(self):
+        """Return hotspots GeoJSON."""
+        response = self.api.get_hotspots()
+        self._send_json_response(response, 200 if response.get("success") else 404)
+    
     def _handle_api_config(self):
-        """Return server configuration with dynamic time slots."""
-        files_response = self.api.get_available_files()
-        time_slots = [f["timeSlot"] for f in files_response.get("files", [])]
+        """Return server configuration with time slots from config."""
+        # Get time slots from config module
+        time_slots = config.get_time_slots()
+        master_info = self.api.get_master_file_info()
         
         self._send_json_response({
             "success": True,
             "config": {
                 "timeSlots": time_slots,
+                "masterPMTilesFile": MASTER_PMTILES_FILE,
+                "masterPMTilesPath": master_info.get("path", f"/{MASTER_PMTILES_FILE}"),
+                "depthPropertyPrefix": config.DEPTH_PROPERTY_PREFIX,
+                "location": config.LOCATION,
+                "startTime": config.START_TIME,
+                "endTime": config.END_TIME,
+                "interval": config.INTERVAL,
+                "crs": config.CRS,
                 "pmtilesFloodDir": PMTILES_FLOOD_DIR,
                 "pmtilesStaticDir": PMTILES_STATIC_DIR,
                 "initialCenter": [77.0293, 28.4622],
                 "initialZoom": 11,
                 "initialStyle": "light",
+                "initialOpacity": 1.0,
                 "statsUpdateInterval": 2000
             }
         })

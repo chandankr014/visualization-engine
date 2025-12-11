@@ -28,15 +28,6 @@ class PolygonAnalytics {
         this.popupPanel = null;
         this.chartInstance = null;
         
-        // Property name candidates (from map-manager)
-        this.depthPropertyCandidates = [
-            'depth', 'Depth', 'DEPTH', 'depth_m', 'Depth_m',
-            'water_depth', 'Water Depth', 'Water_Depth',
-            'Total water', 'Total_water', 'TotalWater',
-            'Total wate', 'Total_wate', 'Total watr',
-            'Total_water_depth'
-        ];
-        
         // Bind methods
         this._handleMapClick = this._handleMapClick.bind(this);
         this._handleMouseMove = this._handleMouseMove.bind(this);
@@ -104,7 +95,7 @@ class PolygonAnalytics {
                         <span class="stat-value" id="polygonTotalArea">--</span>
                     </div>
                     <div class="area-stat-item">
-                        <span class="stat-label">Flooded Area</span>
+                        <span class="stat-label">Flooded</span>
                         <span class="stat-value" id="polygonFloodedArea">--</span>
                     </div>
                     <div class="area-stat-item">
@@ -607,6 +598,9 @@ class PolygonAnalytics {
         let totalArea = 0;
         let floodedArea = 0;
         
+        // Calculate polygon total area (area of drawn polygon)
+        const polygonArea = this._calculatePolygonArea(this.currentPolygon.geometry.coordinates[0]);
+        
         features.forEach(feature => {
             const depth = this._getDepthValue(feature.properties);
             const area = this._calculateFeatureArea(feature);
@@ -621,12 +615,7 @@ class PolygonAnalytics {
                     floodedArea += area;
                 }
             }
-            
-            totalArea += area;
         });
-        
-        // Calculate polygon total area
-        const polygonArea = this._calculatePolygonArea(this.currentPolygon.geometry.coordinates[0]);
         
         return {
             minDepth: minDepth === Infinity ? 0 : minDepth,
@@ -634,23 +623,49 @@ class PolygonAnalytics {
             meanDepth: depthCount > 0 ? sumDepth / depthCount : 0,
             totalArea: polygonArea,
             floodedArea: floodedArea,
-            floodPercent: totalArea > 0 ? (floodedArea / totalArea) * 100 : 0,
+            floodPercent: polygonArea > 0 ? (floodedArea / polygonArea) * 100 : 0,
             featureCount: features.length
         };
     }
 
     /**
-     * Get depth value from properties
+     * Get depth value from properties using current time slot
      */
     _getDepthValue(properties) {
         if (!properties) return null;
-        for (const prop of this.depthPropertyCandidates) {
-            const value = properties[prop];
-            if (value !== undefined && value !== null && value !== '') {
-                const parsed = parseFloat(value);
-                if (!Number.isNaN(parsed)) return parsed;
+        
+        // Get current depth property from map manager
+        const currentDepthProperty = this.mapManager.currentDepthProperty;
+        
+        if (currentDepthProperty) {
+            const value = properties[currentDepthProperty];
+            // Check for null or undefined
+            if (value === null || value === undefined) {
+                return null;
             }
+            // Handle both number and string values
+            const parsed = typeof value === 'number' ? value : parseFloat(value);
+            if (!Number.isNaN(parsed)) return parsed;
         }
+        
+        return null;
+    }
+
+    /**
+     * Get depth value for a specific time slot property
+     */
+    _getDepthValueForTimeSlot(properties, timeSlotProperty) {
+        if (!properties || !timeSlotProperty) return null;
+        
+        const value = properties[timeSlotProperty];
+        // Check for null or undefined
+        if (value === null || value === undefined) {
+            return null;
+        }
+        // Handle both number and string values
+        const parsed = typeof value === 'number' ? value : parseFloat(value);
+        if (!Number.isNaN(parsed)) return parsed;
+        
         return null;
     }
 
@@ -721,6 +736,7 @@ class PolygonAnalytics {
 
     /**
      * Analyze all time slots and generate time series
+     * Uses the master PMTiles file - no geometry reload, just reads different properties
      */
     async analyzeAllTimeSlots() {
         if (!this.currentPolygon) {
@@ -741,32 +757,25 @@ class PolygonAnalytics {
         analyzeBtn.textContent = '⏳ Analyzing...';
         
         const timeSeriesData = [];
-        const currentIndex = this.timeController.getCurrentIndex();
+        const currentDepthProp = this.mapManager.currentDepthProperty;
         
-        for (let i = 0; i < timeSlots.length; i++) {
-            const timeSlot = timeSlots[i];
-            
-            // Load PMTiles for this time slot
-            await this.mapManager.loadPMTiles(timeSlot);
-            
-            // Wait for tiles to render
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Get statistics
-            const bounds = this._getPolygonBounds();
-            const features = this.map.queryRenderedFeatures(
-                [
-                    this.map.project([bounds.minLng, bounds.maxLat]),
-                    this.map.project([bounds.maxLng, bounds.minLat])
-                ],
-                { layers: ['pmtiles-layer'] }
-            );
-            
-            const intersectingFeatures = features.filter(f => 
-                this._featureIntersectsPolygon(f, this.currentPolygon.geometry.coordinates[0])
-            );
-            
-            const stats = this._calculateStats(intersectingFeatures);
+        // Get all features in polygon bounds once (geometry is the same for all time slots)
+        const bounds = this._getPolygonBounds();
+        const allFeatures = this.map.queryRenderedFeatures(
+            [
+                this.map.project([bounds.minLng, bounds.maxLat]),
+                this.map.project([bounds.maxLng, bounds.minLat])
+            ],
+            { layers: ['pmtiles-layer'] }
+        );
+        
+        const intersectingFeatures = allFeatures.filter(f => 
+            this._featureIntersectsPolygon(f, this.currentPolygon.geometry.coordinates[0])
+        );
+        
+        // Analyze each time slot using different property (no reload needed!)
+        for (const timeSlot of timeSlots) {
+            const stats = this._calculateStatsForTimeSlot(intersectingFeatures, timeSlot);
             
             timeSeriesData.push({
                 timeSlot,
@@ -777,8 +786,8 @@ class PolygonAnalytics {
             });
         }
         
-        // Restore original time slot
-        await this.mapManager.loadPMTiles(timeSlots[currentIndex]);
+        // Restore original time slot display
+        this.mapManager.switchTimeSlot(currentDepthProp);
         
         // Draw chart
         this._drawTimeSeriesChart(timeSeriesData);
@@ -791,16 +800,63 @@ class PolygonAnalytics {
     }
 
     /**
+     * Calculate stats for a specific time slot using its property
+     */
+    _calculateStatsForTimeSlot(features, timeSlotProperty) {
+        let minDepth = Infinity;
+        let maxDepth = -Infinity;
+        let sumDepth = 0;
+        let depthCount = 0;
+        let totalArea = 0;
+        let floodedArea = 0;
+        
+        features.forEach(feature => {
+            const depth = this._getDepthValueForTimeSlot(feature.properties, timeSlotProperty);
+            const area = this._calculateFeatureArea(feature);
+            
+            if (depth !== null && !isNaN(depth)) {
+                minDepth = Math.min(minDepth, depth);
+                maxDepth = Math.max(maxDepth, depth);
+                sumDepth += depth;
+                depthCount++;
+                
+                if (depth > 0.1) { // Consider flooded if depth > 0.1m
+                    floodedArea += area;
+                }
+            }
+            
+            totalArea += area;
+        });
+        
+        // Calculate polygon total area
+        const polygonArea = this._calculatePolygonArea(this.currentPolygon.geometry.coordinates[0]);
+        
+        return {
+            minDepth: minDepth === Infinity ? 0 : minDepth,
+            maxDepth: maxDepth === -Infinity ? 0 : maxDepth,
+            meanDepth: depthCount > 0 ? sumDepth / depthCount : 0,
+            totalArea: polygonArea,
+            floodedArea: floodedArea,
+            floodPercent: totalArea > 0 ? (floodedArea / totalArea) * 100 : 0,
+            featureCount: features.length
+        };
+    }
+
+    /**
      * Format time slot for chart labels
+     * Time slot format: D{YYYYMMDDHHmm} e.g., D202512101000
      */
     _formatTimeLabel(timeSlot) {
-        if (!timeSlot || timeSlot.length < 12) return timeSlot;
+        if (!timeSlot || timeSlot.length < 13) return timeSlot;
         
-        const month = timeSlot.substring(4, 6);
-        const day = timeSlot.substring(6, 8);
-        const hour = timeSlot.substring(8, 10);
+        // Skip prefix 'D'
+        const timeStr = timeSlot.substring(1);
+        const month = timeStr.substring(4, 6);
+        const day = timeStr.substring(6, 8);
+        const hour = timeStr.substring(8, 10);
+        const minute = timeStr.substring(10, 12);
         
-        return `${day}/${month} ${hour}:00`;
+        return `${day}/${month} ${hour}:${minute}`;
     }
 
     /**

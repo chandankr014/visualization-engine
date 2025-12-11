@@ -23,6 +23,10 @@ class Logger {
         this._icons = { debug: '🔍', info: 'ℹ️', success: '✓', warning: '⚠️', error: '✗' };
     }
 
+    debug(message, data = null) {
+        this.log('debug', message, data);
+    }
+
     /**
      * Core logging method with batched rendering
      */

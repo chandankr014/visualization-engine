@@ -24,7 +24,7 @@ const DEFAULT_CONFIG = {
     initialZoom: 11,
     initialStyle: 'light',
     statsUpdateInterval: 2000,
-    playbackSpeed: 3000
+    playbackSpeed: 500
 };
 
 /**
@@ -91,11 +91,65 @@ class PMTilesViewerApp {
                 this.config = { ...DEFAULT_CONFIG, ...response.config };
                 this.modules.logger.success('Configuration loaded from server');
                 eventBus.emit(AppEvents.CONFIG_LOADED, this.config);
+                
+                // Populate simulation info in UI
+                this._populateSimulationInfo(response.config);
             }
         } catch (error) {
             this.modules.logger.warning('Using default configuration');
             eventBus.emit(AppEvents.CONFIG_ERROR, error);
         }
+    }
+
+    /**
+     * Populate simulation information in the UI
+     */
+    _populateSimulationInfo(config) {
+        // Update location
+        const locationEl = document.getElementById('infoLocation');
+        if (locationEl && config.location) {
+            locationEl.textContent = config.location;
+        }
+        
+        // Update start time
+        const startTimeEl = document.getElementById('infoStartTime');
+        if (startTimeEl && config.startTime) {
+            startTimeEl.textContent = this._formatTimestamp(config.startTime);
+        }
+        
+        // Update end time
+        const endTimeEl = document.getElementById('infoEndTime');
+        if (endTimeEl && config.endTime) {
+            endTimeEl.textContent = this._formatTimestamp(config.endTime);
+        }
+        
+        // Update interval
+        const intervalEl = document.getElementById('infoInterval');
+        if (intervalEl && config.interval) {
+            intervalEl.textContent = `${config.interval} min`;
+        }
+        
+        // Update time steps count
+        // const timeStepsEl = document.getElementById('infoTimeSteps');
+        // if (timeStepsEl && config.timeSlots) {
+        //     timeStepsEl.textContent = config.timeSlots.length;
+        // }
+    }
+
+    /**
+     * Format timestamp from YYYYMMDDHHmm to readable format
+     */
+    _formatTimestamp(timestamp) {
+        const str = String(timestamp);
+        if (str.length !== 12) return timestamp;
+        
+        const year = str.substring(0, 4);
+        const month = str.substring(4, 6);
+        const day = str.substring(6, 8);
+        const hour = str.substring(8, 10);
+        const minute = str.substring(10, 12);
+        
+        return `${day}/${month}/${year} ${hour}:${minute}`;
     }
 
     /**
@@ -107,7 +161,6 @@ class PMTilesViewerApp {
         // Stats Tracker
         this.modules.statsTracker = new StatsTracker({
             zoom: 'currentZoom',
-            tiles: 'loadedTiles',
             features: 'visibleFeatures',
             cursor: 'cursorPosition',
             mapCoords: 'mapCoordinates'
@@ -134,14 +187,23 @@ class PMTilesViewerApp {
     _setupEventBus() {
         const { logger, mapManager, uiController, timeController } = this.modules;
         
-        // Time change events - load new PMTiles
+        // Time change events - switch to new time slot (no geometry reload needed)
         eventBus.on(AppEvents.TIME_CHANGE, async ({ timeSlot }) => {
-            uiController.showLoading(`Loading ${timeSlot}...`);
-            const success = await mapManager.loadPMTiles(timeSlot);
-            uiController.hideLoading();
-            
-            if (success) {
-                mapManager.setLayerOpacity(uiController.getOpacity());
+            // If master PMTiles already loaded, just switch time property
+            if (mapManager._masterPMTilesLoaded) {
+                const success = mapManager.switchTimeSlot(timeSlot);
+                if (success) {
+                    mapManager.setLayerOpacity(uiController.getOpacity());
+                }
+            } else {
+                // Initial load - load master PMTiles with this time slot
+                uiController.showLoading(`Loading flood data...`);
+                const success = await mapManager.loadPMTiles(timeSlot);
+                uiController.hideLoading();
+                
+                if (success) {
+                    mapManager.setLayerOpacity(uiController.getOpacity());
+                }
             }
         });
         
@@ -186,6 +248,18 @@ class PMTilesViewerApp {
                     }
                 } else if (layer === 'roadways') {
                     await mapManager.toggleRoadways(visible);
+                } else if (layer === 'hotspots') {
+                    if (visible) {
+                        await mapManager.loadHotspots();
+                        await mapManager.addHotspots();
+                    } else {
+                        if (mapManager.map.getLayer('hotspots-circle')) {
+                            mapManager.map.setLayoutProperty('hotspots-circle', 'visibility', 'none');
+                        }
+                        if (mapManager.map.getLayer('hotspots-label')) {
+                            mapManager.map.setLayoutProperty('hotspots-label', 'visibility', 'none');
+                        }
+                    }
                 }
             }
         });
@@ -194,17 +268,12 @@ class PMTilesViewerApp {
         eventBus.on(AppEvents.MAP_STYLE_CHANGE, async (style) => {
             mapManager.changeBaseStyle(style);
             
-            // Wait for style to load, then reload PMTiles layer
+            // Wait for style to load, then apply opacity
             const map = mapManager.getMap();
             if (map) {
                 map.once('style.load', async () => {
-                    const currentTimeSlot = timeController.getCurrentTimeSlot();
-                    if (currentTimeSlot) {
-                        uiController.showLoading('Reloading layer...');
-                        await mapManager.loadPMTiles(currentTimeSlot);
-                        uiController.hideLoading();
-                        mapManager.setLayerOpacity(uiController.getOpacity());
-                    }
+                    // Opacity is applied after layers are restored in changeBaseStyle
+                    mapManager.setLayerOpacity(uiController.getOpacity());
                 });
             }
         });

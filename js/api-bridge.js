@@ -65,6 +65,13 @@ class APIBridge {
     }
 
     /**
+     * Get hotspots GeoJSON
+     */
+    async getHotspots() {
+        return this._cachedRequest('/api/hotspots', 'hotspots');
+    }
+
+    /**
      * Health check endpoint
      */
     async healthCheck() {
@@ -72,10 +79,19 @@ class APIBridge {
     }
 
     /**
-     * Build PMTiles URL for a given time slot
+     * Build PMTiles URL for a given time slot (legacy - now returns master file URL)
+     * @deprecated Use getMasterPMTilesUrl() instead
      */
     buildPMTilesUrl(timeSlot) {
-        return `${this.baseUrl}/pmtiles/flood/PMTile_${timeSlot}.pmtiles`;
+        // Return master PMTiles file URL for all time slots
+        return this.getMasterPMTilesUrl();
+    }
+
+    /**
+     * Get the master PMTiles file URL
+     */
+    getMasterPMTilesUrl() {
+        return `${this.baseUrl}/pmtiles/flood/flood_depth_master.pmtiles`;
     }
 
     /**

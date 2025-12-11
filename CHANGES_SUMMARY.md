@@ -1,5 +1,83 @@
 # PMTiles Viewer - Changes Summary
 
+## Latest Update: Master PMTiles Time-Series Architecture (December 2025)
+
+### Overview
+Redesigned the visualization engine to use a **single master PMTiles file** (`flood_depth_master.pmtiles`) containing time-series flood depth data. This eliminates the need to reload geometry when switching time slots - only the color expression is updated based on the selected time property.
+
+### Data Format
+The master PMTiles file contains:
+- **Consistent geometry**: Grid cells identified by `geo_code`
+- **Time-series properties**: Flood depth values as properties with names like `D202512101000`, `D202512101015`, etc.
+- **Property format**: `D{YYYYMMDDHHmm}` - e.g., `D202512101000` for December 10, 2025 at 10:00
+
+### Key Changes
+
+#### 1. Config Updates (`config.py`)
+- Added `MASTER_PMTILES_FILE` - path to the single master file
+- Added `DEPTH_PROPERTY_PREFIX = "D"` - prefix for time slot properties
+- Added `generate_time_slots()` - generates time slot property names from START_TIME, END_TIME, INTERVAL
+- Added `get_time_slots()` - helper to get all configured time slots
+
+#### 2. Server Updates (`server.py`)
+- Imports configuration from `config.py`
+- Modified `PMTilesAPI` to work with master file
+- Updated `/api/config` endpoint to return:
+  - `timeSlots`: List of property names (e.g., `['D202512101000', 'D202512101015', ...]`)
+  - `masterPMTilesPath`: Path to master file
+  - `depthPropertyPrefix`: The prefix used for depth properties
+  - `startTime`, `endTime`, `interval`: Time configuration
+
+#### 3. API Bridge Updates (`js/api-bridge.js`)
+- Added `getMasterPMTilesUrl()` - returns URL to master PMTiles file
+- Updated `buildPMTilesUrl()` - now returns master file URL (for backward compatibility)
+
+#### 4. Time Controller Updates (`js/time-controller.js`)
+- Updated to work with D-prefixed property names
+- Fixed time formatting for new format (`D{YYYYMMDDHHmm}`)
+- Stores `depthPropertyPrefix` from server config
+
+#### 5. Map Manager Updates (`js/map-manager.js`) - **MAJOR REFACTOR**
+- Added `_masterPMTilesLoaded` flag - tracks if master file is loaded
+- Added `currentDepthProperty` - current time slot property name
+- **New `loadPMTiles(timeSlot)`** behavior:
+  - First call: Loads master PMTiles file and initial time slot
+  - Subsequent calls: Delegates to `switchTimeSlot()` (no reload!)
+- **New `switchTimeSlot(timeSlot)`** method:
+  - Updates `fill-color` expression to use new time property
+  - No geometry reload - instant time switching!
+  - Logs switch time (typically < 10ms)
+- Updated `_getDepthExpression(timeSlot)` - uses specific time property
+- Updated `_getDepthValue(properties)` - reads from current time property
+- Updated popup to show current time slot
+- Updated `changeBaseStyle()` to preserve current time slot
+
+#### 6. Main.js Updates (`js/main.js`)
+- Updated `TIME_CHANGE` event handler:
+  - Checks if master is loaded, uses `switchTimeSlot()` if yes
+  - Only shows loading overlay for initial load
+- Updated style change handler - no PMTiles reload needed
+
+#### 7. Polygon Analytics Updates (`js/polygon-analytics.js`)
+- Removed `depthPropertyCandidates` - now uses map manager's current property
+- Updated `_getDepthValue()` - uses `mapManager.currentDepthProperty`
+- Added `_getDepthValueForTimeSlot(properties, timeSlotProperty)`
+- **Optimized `analyzeAllTimeSlots()`**:
+  - Queries features once (geometry is same for all time slots)
+  - Iterates over time slots, reading different properties
+  - No PMTiles reloading - much faster analysis!
+- Updated `_formatTimeLabel()` for D-prefixed format
+
+### Performance Benefits
+1. **Faster time switching**: No geometry reload, just style expression update (~10ms)
+2. **Faster polygon analysis**: Query features once, analyze all time slots from properties
+3. **Reduced network traffic**: Single file load instead of multiple files
+4. **Better caching**: Browser caches single master file
+
+---
+
+## Previous Update: Static Layers and Ward Boundaries
+
 ## Overview
 Updated the application to support the new PMTiles directory structure and added ward boundary choropleth visualization with toggle controls for static layers.
 

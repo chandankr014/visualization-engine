@@ -1,23 +1,27 @@
-# 🗺️ PMTiles Geospatial Visualization Engine
+# 🌊 AIResQ ClimSols - Flood Visualization Engine
 
-> **Interactive tile-based visualization system for flood depth data**  
-> Built with Python backend + JavaScript frontend + MapLibre GL
+> **Advanced tile-based visualization system for time-series flood depth data**  
+> Built with Python backend + JavaScript frontend + MapLibre GL + PMTiles
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![MapLibre](https://img.shields.io/badge/MapLibre-GL-green)](https://maplibre.org/)
 
 ---
 
 ## 📋 Table of Contents
 
 - [System Overview](#-system-overview)
+- [Key Features](#-key-features)
+- [Performance Optimizations](#-performance-optimizations)
 - [Why PMTiles?](#-why-pmtiles)
 - [Tile Serving Workflow](#-tile-serving-workflow-core-concept)
 - [Architecture](#-architecture)
 - [Backend (Python)](#-backend-python)
 - [Frontend (JavaScript)](#-frontend-javascript)
-- [Backend ↔ Frontend Data Flow](#-backend--frontend-data-flow)
-- [Execution Flow](#-execution-flow)
 - [Setup Guide](#-setup-guide)
-- [Debugging & Performance Monitoring](#-debugging--performance-monitoring)
 - [API Reference](#-api-reference)
+- [Recent Updates](#-recent-updates)
 
 ---
 
@@ -25,12 +29,14 @@
 
 ### What is this?
 
-This is a **tile-based geospatial visualization engine** that displays flood depth data on an interactive map.
+**AIResQ ClimSols Flood Visualization Engine** is a professional-grade, tile-based geospatial visualization system that displays time-series flood depth data on an interactive map with advanced analytics capabilities.
 
 **Key Components:**
-- **Python backend** → Serves pre-processed PMTiles files via HTTP
-- **JavaScript frontend** → Loads tiles + renders map using MapLibre GL
+- **Python backend** → Serves pre-processed PMTiles files via HTTP with range request support
+- **JavaScript frontend** → Dynamic time-series visualization using MapLibre GL
 - **PMTiles format** → Efficient cloud-optimized vector tile storage
+- **Master PMTiles** → Single file containing all time-series data (D-prefixed properties)
+- **Polygon Analytics** → Draw custom areas and analyze flood impact over time
 
 ### Purpose
 
@@ -44,12 +50,80 @@ Traditional approaches load **entire GeoJSON files** (often hundreds of MBs) int
 - Browser requests **only the tiles it needs** for the current view
 - Backend streams **byte ranges** (not full files)
 - MapLibre renders tiles progressively
+- Single master file with time-series properties for efficient time switching
 
-**Result:** Fast loading, low bandwidth, smooth panning/zooming even with massive datasets.
+**Result:** Fast loading, low bandwidth, smooth panning/zooming, and instant time-slot switching even with massive time-series datasets.
 
 ---
 
-## 🚀 Why PMTiles?
+## ✨ Key Features
+
+### 🎨 Visualization
+
+- **Time-Series Animation** - 0.5s interval playback with smooth transitions
+- **Dual Visualization Modes** - Multiclass depth gradient or binary flood/no-flood
+- **Dynamic Opacity Control** - Real-time transparency adjustment (default 100%)
+- **Smart Cell Rendering** - Null/0 depth cells are fully transparent
+- **Multiple Base Maps** - OpenStreetMap, Light, Dark, Satellite, Topographic
+
+### 📊 Analytics
+
+- **Polygon Drawing Tool** - Draw custom analysis areas (press 'P' to toggle)
+- **Time-Series Charts** - Visualize depth changes over time for drawn areas
+- **Real-time Statistics** - Min/max/mean depth, flooded area, total area
+- **Visible Area Stats** - Dynamic stats for current map viewport
+- **Export Capabilities** - Download analysis data
+
+### 🗺️ Layers
+
+- **Ward Boundaries** - Administrative choropleth overlay
+- **Hotspots** - Critical flood-prone locations
+- **Roadways** - Infrastructure network visualization  
+- **Land Use (LULC)** - Multi-select land classification overlay
+- **DEM** - Digital elevation model
+
+### 🚀 Performance
+
+- **Optimized Throttling** - Stats updates every 2s (was causing log spam)
+- **Efficient Event Handling** - Reduced mousemove throttle to 100ms
+- **Minimal Bandwidth** - Range requests load only visible tiles
+- **No Redundant Logging** - Debug-level stats to prevent activity log clutter
+- **GPU Acceleration** - Hardware-accelerated rendering via MapLibre GL
+
+---
+
+## ⚡ Performance Optimizations
+
+### Recent Performance Improvements
+
+1. **Activity Log Spam Fix**
+   - Changed stats logging from `info` to `debug` level
+   - Prevents "Stats: X features..." from flooding activity log every 2 seconds
+   - Users only see important application events
+
+2. **Throttling Optimization**
+   - Stats update throttle: 500ms → 2000ms (4x reduction in calculations)
+   - Mouse move throttle: 50ms → 100ms (2x reduction in cursor updates)
+   - Significantly reduced CPU usage during map interactions
+
+3. **Zero-Opacity Rendering**
+   - Cells with null/NA/0 depth render at 0% opacity
+   - Reduces visual clutter and improves map readability
+   - Dynamic opacity expression: `['case', ['!', hasValidDepth], 0, ['<=', depth, 0], 0, 1]`
+
+4. **Single Master PMTiles Architecture**
+   - Time switching changes property expression only (no geometry reload)
+   - Instant time-slot transitions without network requests
+   - All time-series data in one optimized file
+
+5. **Efficient Stats Calculation**
+   - Batched DOM updates using `requestAnimationFrame`
+   - Filtered null values before calculations
+   - Polygon area calculated once (not per grid cell)
+
+---
+
+## � Why PMTiles?
 
 ### Traditional Formats vs PMTiles
 
@@ -1307,6 +1381,114 @@ window.pmtilesApp.getVersion()
 
 ---
 
+## 🆕 Recent Updates
+
+### Version 2.2.0 (December 2025)
+
+#### 🐛 Bug Fixes
+
+1. **Activity Log Spam Resolved**
+   - Fixed stats logging appearing every 2 seconds in activity log
+   - Changed log level from `info` to `debug` for stats calculations
+   - Users now see only relevant application events
+
+2. **Transparent Null/Zero Cells**
+   - Grid cells with null, NA, or 0 depth now render at 0% opacity
+   - Improves visual clarity by hiding irrelevant cells
+   - Dynamic opacity expression with proper null handling
+
+3. **Polygon Analysis Area Calculation**
+   - Fixed "Total Area" to show actual polygon area (not grid cells sum)
+   - More accurate flooded area percentage calculation
+   - `floodPercent = (floodedArea / polygonArea) * 100`
+
+#### ⚡ Performance Improvements
+
+1. **Optimized Event Throttling**
+   - Stats updates: 500ms → 2000ms (75% reduction in calculations)
+   - Mouse move: 50ms → 100ms (50% reduction in cursor updates)
+   - Significant CPU usage reduction during map interactions
+
+2. **Enhanced Logger**
+   - Added `debug()` method for non-critical logging
+   - Prevents performance monitoring from cluttering activity feed
+   - Maintains detailed console logs for debugging
+
+3. **Time Slider Speed**
+   - Playback interval: 1500ms → 500ms (0.5 second intervals)
+   - Smoother time-series animation
+   - Better user experience for temporal analysis
+
+#### 🎨 UI/UX Enhancements
+
+1. **Professional Sidebar Redesign**
+   - Enhanced glassmorphism effect with better backdrop blur
+   - Improved color gradients (blue → purple spectrum)
+   - Better shadows and depth perception
+   - Increased font sizes and weights for readability
+   - Smooth hover animations on all interactive elements
+
+2. **Enhanced Visual Hierarchy**
+   - Larger brand name (1.75rem) with animated pulse effect
+   - Better section spacing and padding
+   - Improved info card design with hover effects
+   - Professional toggle switches with gradient backgrounds
+   - Enhanced slider thumbs with white borders and shadows
+
+3. **Color Palette Upgrade**
+   - Primary: #2563eb → #1e40af gradient
+   - Accent purple: #8b5cf6 for visual interest
+   - Better contrast ratios for accessibility
+   - Consistent gradient usage across components
+
+4. **Typography Improvements**
+   - Inter font family for modern look
+   - Increased font weights (600-700) for better readability
+   - Better letter-spacing and line-height
+   - Monospace fonts for data values
+
+5. **Interactive Feedback**
+   - Hover effects on all sections
+   - Transform animations (translateY, scale)
+   - Better shadow transitions
+   - Smooth color transitions (cubic-bezier easing)
+
+6. **Enhanced Scrollbar**
+   - Blue gradient scrollbar thumb
+   - Larger width (10px) for easier interaction
+   - Smooth hover states
+
+#### 🔧 Technical Improvements
+
+1. **CSS Architecture**
+   - Enhanced CSS variables for better theme management
+   - Improved shadow system (sm, md, lg, xl)
+   - Better transition timing functions
+   - Increased border radius values for softer edges
+
+2. **Component Optimization**
+   - Removed unnecessary re-renders
+   - Better event listener management
+   - Improved memory usage
+
+3. **Code Quality**
+   - Consistent styling patterns
+   - Better separation of concerns
+   - Improved code documentation
+
+---
+
+## 📊 Browser Compatibility
+
+| Browser | Version | Status |
+|---------|---------|--------|
+| Chrome | 90+ | ✅ Fully Supported |
+| Firefox | 88+ | ✅ Fully Supported |
+| Safari | 14+ | ✅ Fully Supported |
+| Edge | 90+ | ✅ Fully Supported |
+
+---
+
 ## 🎓 Summary
 
 ### Key Takeaways
@@ -1347,8 +1529,21 @@ window.pmtilesApp.getVersion()
 
 ## 📝 License
 
-This project is open-source and available under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
 
-**Built with ❤️ for efficient geospatial visualization**
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+---
+
+## 📧 Contact
+
+For questions or support, please contact the AIResQ ClimSols team.
+
+---
+
+**Built with ❤️ by AIResQ ClimSols Team**
+
