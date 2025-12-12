@@ -13,6 +13,7 @@ import TimeController from './time-controller.js';
 import UIController from './ui-controller.js';
 import MapManager from './map-manager.js';
 import PolygonAnalytics from './polygon-analytics.js';
+import PrecipitationGraph from './precipitation-graph.js';
 
 /**
  * Default Configuration
@@ -94,6 +95,11 @@ class PMTilesViewerApp {
                 
                 // Populate simulation info in UI
                 this._populateSimulationInfo(response.config);
+                
+                // Log batch configuration
+                if (response.config.batchFiles) {
+                    this.modules.logger.info(`Loaded ${response.config.batchFiles.length} batch files (${response.config.batchSize} slots per batch)`);
+                }
             }
         } catch (error) {
             this.modules.logger.warning('Using default configuration');
@@ -172,11 +178,29 @@ class PMTilesViewerApp {
         // Time Controller
         this.modules.timeController = new TimeController(this.config, logger);
         
-        // Map Manager
+        // Map Manager - pass config with batch info
         this.modules.mapManager = new MapManager(this.config, logger, this.modules.statsTracker);
+        
+        // Update batch config in mapManager if available
+        if (this.config.batchFiles && this.config.batchSize) {
+            this.modules.mapManager.updateBatchConfig(this.config);
+        }
         
         // Polygon Analytics (initialized after map is ready)
         this.modules.polygonAnalytics = null;
+        
+        // Precipitation Graph - pass config with startTime and endTime
+        const precipConfig = {
+            timeSlots: this.config.timeSlots || [],
+            startTime: this.config.startTime || null,
+            endTime: this.config.endTime || null
+        };
+        this.modules.precipitationGraph = new PrecipitationGraph(precipConfig, logger);
+        
+        // Set time slots in precipitation graph
+        if (this.config.timeSlots?.length > 0) {
+            this.modules.precipitationGraph.setTimeSlots(this.config.timeSlots);
+        }
         
         logger.success('All modules initialized');
     }
@@ -187,18 +211,33 @@ class PMTilesViewerApp {
     _setupEventBus() {
         const { logger, mapManager, uiController, timeController } = this.modules;
         
-        // Time change events - switch to new time slot (no geometry reload needed)
-        eventBus.on(AppEvents.TIME_CHANGE, async ({ timeSlot }) => {
-            // If master PMTiles already loaded, just switch time property
+        // Handle batch transition events for UI feedback
+        eventBus.on(AppEvents.BATCH_TRANSITION_START, ({ fromBatch, toBatch }) => {
+            logger.info(`Batch transition: ${fromBatch} → ${toBatch}`);
+            // Show subtle loading indicator (non-blocking)
+            uiController.showBatchTransitionIndicator?.();
+        });
+        
+        eventBus.on(AppEvents.BATCH_TRANSITION_END, ({ batchFile, loadTime, error }) => {
+            uiController.hideBatchTransitionIndicator?.();
+            if (!error) {
+                logger.success(`Batch ${batchFile} ready (${loadTime?.toFixed(2)}s)`);
+            }
+        });
+        
+        // Time change events - switch to new time slot (batch-aware)
+        eventBus.on(AppEvents.TIME_CHANGE, async ({ timeSlot, index }) => {
+            // Pass both index and timeSlot to mapManager
             if (mapManager._masterPMTilesLoaded) {
-                const success = mapManager.switchTimeSlot(timeSlot);
+                // Switch time slot (will load new batch if needed - smooth transition)
+                const success = mapManager.switchTimeSlot(index, timeSlot);
                 if (success) {
                     mapManager.setLayerOpacity(uiController.getOpacity());
                 }
             } else {
-                // Initial load - load master PMTiles with this time slot
+                // Initial load - load batch PMTiles with this time index (skip double-buffering)
                 uiController.showLoading(`Loading flood data...`);
-                const success = await mapManager.loadPMTiles(timeSlot);
+                const success = await mapManager.loadPMTiles(index, timeSlot, true);
                 uiController.hideLoading();
                 
                 if (success) {
@@ -243,8 +282,10 @@ class PMTilesViewerApp {
                         }
                     }
                 } else if (layer === 'flood-depth') {
-                    if (mapManager.map.getLayer('pmtiles-layer')) {
-                        mapManager.map.setLayoutProperty('pmtiles-layer', 'visibility', visible ? 'visible' : 'none');
+                    // Use the active layer ID from double-buffering system
+                    const activeFillId = mapManager._getActiveFillLayerId();
+                    if (mapManager.map.getLayer(activeFillId)) {
+                        mapManager.map.setLayoutProperty(activeFillId, 'visibility', visible ? 'visible' : 'none');
                     }
                 } else if (layer === 'roadways') {
                     await mapManager.toggleRoadways(visible);
@@ -262,6 +303,23 @@ class PMTilesViewerApp {
                     }
                 }
             }
+        });
+        
+        // Precipitation graph toggle and click events
+        eventBus.on(AppEvents.LAYER_TOGGLE, async ({ layer, visible }) => {
+            if (layer === 'precipitation-graph') {
+                const precipGraph = this.modules.precipitationGraph;
+                if (visible) {
+                    precipGraph.show();
+                } else {
+                    precipGraph.hide();
+                }
+            }
+        });
+        
+        eventBus.on(AppEvents.PRECIP_GRAPH_CLICK, ({ index, timeSlot }) => {
+            // Jump the time slider to the clicked position
+            timeController.setTimeIndex(index);
         });
         
         // Map style change events
@@ -315,10 +373,12 @@ class PMTilesViewerApp {
                 await mapManager.addWardBoundary();
                 
                 const initialTimeSlot = timeController.getCurrentTimeSlot();
+                const initialIndex = timeController.getCurrentIndex();
                 
                 if (initialTimeSlot) {
                     uiController.showLoading('Loading initial data...');
-                    const success = await mapManager.loadPMTiles(initialTimeSlot);
+                    // Pass index and timeSlot to batch-aware loadPMTiles
+                    const success = await mapManager.loadPMTiles(initialIndex, initialTimeSlot);
                     uiController.hideLoading();
                     
                     if (success) {

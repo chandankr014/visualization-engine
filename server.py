@@ -28,6 +28,7 @@ PMTILES_DIR = "pmtiles"
 PMTILES_FLOOD_DIR = "pmtiles/flood"
 PMTILES_STATIC_DIR = "pmtiles/static"
 CITY_DIR = "city"
+CITY_NAME = "gurugram"
 MASTER_PMTILES_FILE = config.MASTER_PMTILES_FILE
 
 
@@ -36,7 +37,7 @@ class PMTilesAPI:
     
     def __init__(self, base_dir: str):
         self.base_dir = Path(base_dir)
-        self.pmtiles_dir = self.base_dir / PMTILES_DIR
+        self.pmtiles_dir = self.base_dir / PMTILES_DIR / CITY_NAME
         self.master_file_path = self.base_dir / MASTER_PMTILES_FILE
         self.time_slots = config.get_time_slots()
     
@@ -109,7 +110,7 @@ class PMTilesAPI:
     
     def get_ward_boundaries(self) -> dict:
         """Get city ward boundary GeoJSON."""
-        city_dir = self.base_dir / CITY_DIR
+        city_dir = self.base_dir / CITY_DIR / CITY_NAME
         ward_file = city_dir / "city_wards_boundary.geojson"
         
         if not ward_file.exists():
@@ -132,7 +133,7 @@ class PMTilesAPI:
     
     def get_roadways(self) -> dict:
         """Get roadways GeoJSON."""
-        city_dir = self.base_dir / CITY_DIR
+        city_dir = self.base_dir / CITY_DIR / CITY_NAME
         roadways_file = city_dir / "ggn_roadways_clean.geojson"
         
         if not roadways_file.exists():
@@ -155,7 +156,7 @@ class PMTilesAPI:
     
     def get_hotspots(self) -> dict:
         """Get hotspots GeoJSON."""
-        city_dir = self.base_dir / CITY_DIR
+        city_dir = self.base_dir / CITY_DIR / CITY_NAME
         hotspots_file = city_dir / "hotspots.geojson"
         
         if not hotspots_file.exists():
@@ -178,7 +179,7 @@ class PMTilesAPI:
     
     def get_hotspots(self) -> dict:
         """Get hotspots GeoJSON."""
-        city_dir = self.base_dir / CITY_DIR
+        city_dir = self.base_dir / CITY_DIR / CITY_NAME
         hotspots_file = city_dir / "hotspots.geojson"
         
         if not hotspots_file.exists():
@@ -192,6 +193,49 @@ class PMTilesAPI:
             return {
                 "success": True,
                 "data": geojson_data,
+                "size": stat.st_size,
+                "sizeFormatted": self._format_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_precipitation(self) -> dict:
+        """Get precipitation data from CSV file."""
+        import csv
+        city_dir = self.base_dir / CITY_DIR / CITY_NAME
+        
+        # Find the precipitation CSV file (pattern: TP_5m_*.csv)
+        precip_files = list(city_dir.glob("TP_5m_*.csv"))
+        
+        if not precip_files:
+            return {"success": False, "error": "Precipitation file not found"}
+        
+        precip_file = precip_files[0]  # Use the first matching file
+        
+        try:
+            data = []
+            with open(precip_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        # Parse time and precipitation value
+                        time_val = int(row['Time'])
+                        tp_val = float(row['tp'])
+                        data.append({
+                            "time": time_val,
+                            "tp": tp_val,
+                            "unit": row.get('tp_unit', 'm')
+                        })
+                    except (ValueError, KeyError) as e:
+                        continue  # Skip invalid rows
+            
+            stat = precip_file.stat()
+            return {
+                "success": True,
+                "data": data,
+                "count": len(data),
+                "filename": precip_file.name,
                 "size": stat.st_size,
                 "sizeFormatted": self._format_size(stat.st_size),
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
@@ -313,6 +357,8 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
             self._handle_api_roadways()
         elif path == '/api/hotspots':
             self._handle_api_hotspots()
+        elif path == '/api/precipitation':
+            self._handle_api_precipitation()
         elif path == '/api/health':
             self._handle_api_health()
         elif path == '/api/config':
@@ -356,16 +402,23 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
         response = self.api.get_hotspots()
         self._send_json_response(response, 200 if response.get("success") else 404)
     
+    def _handle_api_precipitation(self):
+        """Return precipitation data."""
+        response = self.api.get_precipitation()
+        self._send_json_response(response, 200 if response.get("success") else 404)
+    
     def _handle_api_config(self):
-        """Return server configuration with time slots from config."""
+        """Return server configuration with time slots and batch info from config."""
         # Get time slots from config module
         time_slots = config.get_time_slots()
+        batch_files = config.get_batch_files()
         master_info = self.api.get_master_file_info()
         
         self._send_json_response({
             "success": True,
             "config": {
                 "timeSlots": time_slots,
+                "totalTimeSlots": len(time_slots),
                 "masterPMTilesFile": MASTER_PMTILES_FILE,
                 "masterPMTilesPath": master_info.get("path", f"/{MASTER_PMTILES_FILE}"),
                 "depthPropertyPrefix": config.DEPTH_PROPERTY_PREFIX,
@@ -374,6 +427,10 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
                 "endTime": config.END_TIME,
                 "interval": config.INTERVAL,
                 "crs": config.CRS,
+                # Batch configuration for optimized PMTiles
+                "batchSize": config.BATCH_SIZE,
+                "batchDurationHours": config.BATCH_DURATION_HOURS,
+                "batchFiles": batch_files,
                 "pmtilesFloodDir": PMTILES_FLOOD_DIR,
                 "pmtilesStaticDir": PMTILES_STATIC_DIR,
                 "initialCenter": [77.0293, 28.4622],

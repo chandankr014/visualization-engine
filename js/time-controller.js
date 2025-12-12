@@ -85,6 +85,23 @@ class TimeController {
     _setupEventListeners() {
         const { slider, playPauseBtn } = this.elements;
         
+        // Pause playback during batch transitions
+        eventBus.on(AppEvents.BATCH_TRANSITION_START, () => {
+            if (this.isPlaying) {
+                this._wasPlayingBeforeBatch = true;
+                this.pause();
+                this.logger.info('Playback paused for batch transition');
+            }
+        });
+        
+        eventBus.on(AppEvents.BATCH_TRANSITION_END, () => {
+            if (this._wasPlayingBeforeBatch) {
+                this._wasPlayingBeforeBatch = false;
+                // Resume after a short delay to allow rendering
+                setTimeout(() => this.play(), 300);
+            }
+        });
+        
         // Slider input with debounce
         let sliderTimeout;
         slider?.addEventListener('input', (e) => {

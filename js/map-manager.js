@@ -40,6 +40,30 @@ class MapManager {
         this.staticLayers = new Map(); // Track loaded static layers
         this.hotspotsData = null; // Hotspots data
         
+        // Batch-based PMTiles configuration
+        this.batchConfig = {
+            batchSize: config.batchSize || 48,
+            batchFiles: config.batchFiles || [],
+            floodDir: config.pmtilesFloodDir || 'pmtiles/flood',
+            currentBatchIndex: -1,
+            currentBatchFile: null
+        };
+        this.currentTimeIndex = 0; // Global time slot index
+        this.currentLocalIndex = 0; // Index within current batch (0-47)
+        
+        // Feature state tracking for depth values
+        // We use feature-state because MapLibre can't parse JSON arrays in expressions
+        this._featureDepthCache = new Map(); // geo_code -> parsed flood_depths array
+        this._pendingFeatureStateUpdate = false;
+        
+        // Batch transition state (double-buffering for smooth transitions)
+        this._batchTransition = {
+            isTransitioning: false,
+            pendingBatchInfo: null,
+            activeLayerSuffix: 'A',  // 'A' or 'B' for double-buffering
+            preloadedSources: new Map() // batchFile -> { loaded, sourceId }
+        };
+        
         // Base map styles
         this.baseStyles = {
             light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
@@ -545,15 +569,107 @@ class MapManager {
         this.statsTracker.updateCursor(e.lngLat.lat, e.lngLat.lng);
     }
 
-    async loadPMTiles(timeSlot) {
+    /**
+     * Update batch configuration from server config
+     * @param {Object} serverConfig - Config from /api/config endpoint
+     */
+    updateBatchConfig(serverConfig) {
+        if (serverConfig.batchSize) {
+            this.batchConfig.batchSize = serverConfig.batchSize;
+        }
+        if (serverConfig.batchFiles) {
+            this.batchConfig.batchFiles = serverConfig.batchFiles;
+        }
+        if (serverConfig.pmtilesFloodDir) {
+            this.batchConfig.floodDir = serverConfig.pmtilesFloodDir;
+        }
+        this.logger.info(`Batch config updated: ${this.batchConfig.batchFiles.length} batch files, ${this.batchConfig.batchSize} slots per batch`);
+    }
+
+    /**
+     * Get the current active layer IDs based on suffix
+     * @returns {Object} Object with fillId, outlineId, sourceId
+     */
+    _getActiveLayerIds() {
+        const suffix = this._batchTransition.activeLayerSuffix;
+        return {
+            fillId: `pmtiles-layer-${suffix}`,
+            outlineId: `pmtiles-outline-${suffix}`,
+            sourceId: `pmtiles-source-${suffix}`
+        };
+    }
+
+    /**
+     * Get the next layer IDs for the incoming batch (opposite of active)
+     * @returns {Object} Object with fillId, outlineId, sourceId
+     */
+    _getNextLayerIds() {
+        const suffix = this._batchTransition.activeLayerSuffix === 'A' ? 'B' : 'A';
+        return {
+            fillId: `pmtiles-layer-${suffix}`,
+            outlineId: `pmtiles-outline-${suffix}`,
+            sourceId: `pmtiles-source-${suffix}`,
+            suffix
+        };
+    }
+
+    /**
+     * Get batch info for a given global time index
+     * @param {number} globalIndex - Global time slot index (0-based)
+     * @returns {Object} Batch info with batchIndex, localIndex, batchFile
+     */
+    _getBatchForIndex(globalIndex) {
+        const batchSize = this.batchConfig.batchSize;
+        const batchFiles = this.batchConfig.batchFiles;
+        
+        const batchIndex = Math.floor(globalIndex / batchSize);
+        const localIndex = globalIndex % batchSize;
+        
+        // Clamp to available batch files
+        const clampedBatchIndex = Math.min(batchIndex, batchFiles.length - 1);
+        const batchFile = batchFiles[clampedBatchIndex];
+        
+        return {
+            batchIndex: clampedBatchIndex,
+            localIndex,
+            globalIndex,
+            batchFile: batchFile?.filename || null,
+            batchPath: batchFile?.path || null
+        };
+    }
+
+    /**
+     * Load PMTiles for a given time index (batch-based system)
+     * Uses double-buffering for smooth transitions between batches
+     * @param {number} timeIndex - Global time slot index (0-based)
+     * @param {string} timeSlot - Time slot property name (e.g., 'D202512101000') - kept for compatibility
+     * @param {boolean} isInitialLoad - Whether this is the first load (skip double-buffering)
+     */
+    async loadPMTiles(timeIndex, timeSlot = null, isInitialLoad = false) {
         if (!this.map) {
             this.logger.error('Map not initialized');
             return false;
         }
         
-        // If master PMTiles is already loaded, just switch the time property
-        if (this._masterPMTilesLoaded) {
-            return this.switchTimeSlot(timeSlot);
+        // Handle legacy call with just timeSlot string
+        if (typeof timeIndex === 'string') {
+            timeSlot = timeIndex;
+            timeIndex = this.currentTimeIndex || 0;
+        }
+        
+        // Get batch info for this time index
+        const batchInfo = this._getBatchForIndex(timeIndex);
+        
+        // If same batch is already loaded, just switch the local index
+        if (this._masterPMTilesLoaded && batchInfo.batchIndex === this.batchConfig.currentBatchIndex) {
+            return this.switchTimeSlot(timeIndex, timeSlot);
+        }
+        
+        // If a batch transition is already in progress, queue this request
+        if (this._batchTransition.isTransitioning) {
+            this.logger.info('Batch transition in progress, queuing request');
+            this._batchTransition.pendingBatchInfo = { timeIndex, timeSlot };
+            return true; // Return true to indicate request is queued
         }
         
         if (this._isLoading) {
@@ -561,16 +677,27 @@ class MapManager {
             return false;
         }
 
+        // Determine if this is the first load (no existing layers)
+        const isFirstLoad = !this._masterPMTilesLoaded || isInitialLoad;
+        
         this._isLoading = true;
-        this.logger.info(`Loading master PMTiles file...`);
+        this._batchTransition.isTransitioning = !isFirstLoad;
+        
+        if (!isFirstLoad) {
+            // Emit batch transition start for coordination
+            eventBus.emit(AppEvents.BATCH_TRANSITION_START, { 
+                fromBatch: this.batchConfig.currentBatchFile,
+                toBatch: batchInfo.batchFile 
+            });
+        }
+        
+        this.logger.info(`${isFirstLoad ? 'Loading' : 'Transitioning to'} batch: ${batchInfo.batchFile} (index ${batchInfo.localIndex})...`);
         const mapState = this._saveMapState();
         const loadStartTime = performance.now();
 
         try {
-            // Use master PMTiles URL
-            const pmtilesUrl = apiBridge.getMasterPMTilesUrl();
-            
-            this._removeExistingLayers();
+            // Build URL for the batch file
+            const pmtilesUrl = apiBridge.getBatchPMTilesUrl(batchInfo.batchFile, this.batchConfig.floodDir);
 
             const p = new pmtiles.PMTiles(pmtilesUrl);
             const [metadata, header] = await Promise.all([p.getMetadata(), p.getHeader()]);
@@ -583,36 +710,65 @@ class MapManager {
             const minzoom = parseInt(metadata.minzoom) || 0;
             const maxzoom = parseInt(metadata.maxzoom) || 14;
 
-            // Add source
-            this.map.addSource('pmtiles-source', {
+            // Get layer IDs for the new batch
+            const nextIds = isFirstLoad 
+                ? { fillId: 'pmtiles-layer-A', outlineId: 'pmtiles-outline-A', sourceId: 'pmtiles-source-A', suffix: 'A' }
+                : this._getNextLayerIds();
+            
+            // Clean up any orphaned layers with the same ID (safety)
+            this._cleanupLayerById(nextIds.fillId);
+            this._cleanupLayerById(nextIds.outlineId);
+            if (this.map.getSource(nextIds.sourceId)) {
+                this.map.removeSource(nextIds.sourceId);
+            }
+
+            // Add source with promoteId for feature-state support
+            this.map.addSource(nextIds.sourceId, {
                 type: 'vector',
                 url: `pmtiles://${pmtilesUrl}`,
                 minzoom,
-                maxzoom
+                maxzoom,
+                promoteId: 'geo_code' // Use geo_code as feature ID for feature-state
             });
 
-            // Store current depth property (time slot)
-            this.currentDepthProperty = timeSlot;
-
-            // Add layers with the specific time property
-            const depthExpression = this._getDepthExpression(timeSlot);
-            const fillColorExpression = this._getFillColorExpression(depthExpression, this.currentLayerType);
+            // Use feature-state for depth values since flood_depths is stored as JSON string
+            const fillColorExpression = this._getFeatureStateColorExpression(this.currentLayerType);
             
             const fillLayerConfig = {
-                id: 'pmtiles-layer',
+                id: nextIds.fillId,
                 type: 'fill',
-                source: 'pmtiles-source',
+                source: nextIds.sourceId,
                 'source-layer': layerName,
                 paint: {
                     'fill-color': fillColorExpression,
-                    'fill-opacity': 1
+                    'fill-opacity': isFirstLoad ? 1 : 0 // Start invisible for transitions
                 }
             };
             this.map.addLayer(fillLayerConfig);
+
+            // Add outline layer (hidden by default)
+            this.map.addLayer({
+                id: nextIds.outlineId,
+                type: 'line',
+                source: nextIds.sourceId,
+                'source-layer': layerName,
+                paint: {
+                    'line-color': '#0f172a',
+                    'line-width': 0,
+                    'line-opacity': 0
+                }
+            });
+
+            // Store current indices
+            this.currentTimeIndex = timeIndex;
+            this.currentLocalIndex = batchInfo.localIndex;
+            this.currentDepthProperty = timeSlot;
+            this.batchConfig.currentBatchIndex = batchInfo.batchIndex;
+            this.batchConfig.currentBatchFile = batchInfo.batchFile;
             
             // Store config for style changes
             this.currentLayerConfig = {
-                fill: fillLayerConfig,
+                fill: { ...fillLayerConfig },
                 layerName,
                 sourceConfig: {
                     type: 'vector',
@@ -622,83 +778,293 @@ class MapManager {
                 }
             };
 
-            // Add outline layer (hidden by default)
-            this.map.addLayer({
-                id: 'pmtiles-outline',
-                type: 'line',
-                source: 'pmtiles-source',
-                'source-layer': layerName,
-                paint: {
-                    'line-color': '#0f172a',
-                    'line-width': 0,
-                    'line-opacity': 0
-                }
-            });
-
-            // Restore or fit map view
-            this._restoreOrFitBounds(mapState, bounds);
+            // Restore or fit map view (only on first load)
+            if (isFirstLoad) {
+                this._restoreOrFitBounds(mapState, bounds);
+            }
 
             // Setup handlers once
             if (!this._handlersSetup) {
                 this._setupClickHandler();
                 this._setupCursorInteractions();
+                this._setupFeatureStateUpdater();
                 this._handlersSetup = true;
             }
             
+            // Wait for tiles to load before transitioning
+            await this._waitForSourceLoad(nextIds.sourceId, nextIds.fillId, layerName);
+            
+            // Update feature states for the new layer
+            await this._updateFeatureStatesForLayer(nextIds.sourceId, nextIds.fillId, layerName);
+            
+            // Perform the layer swap (crossfade for smooth transition)
+            if (!isFirstLoad) {
+                await this._performLayerSwap(nextIds);
+            }
+            
+            // Update active layer suffix
+            this._batchTransition.activeLayerSuffix = nextIds.suffix;
             this._masterPMTilesLoaded = true;
             
             const loadTime = (performance.now() - loadStartTime) / 1000;
             this.statsTracker.updateLoadTime(loadTime);
-            this.logger.success(`Master PMTiles loaded in ${loadTime.toFixed(2)}s`);
-            eventBus.emit(AppEvents.MAP_LAYER_LOADED, { timeSlot, loadTime });
+            this.logger.success(`Batch ${batchInfo.batchFile} ${isFirstLoad ? 'loaded' : 'transitioned'} in ${loadTime.toFixed(2)}s`);
+            eventBus.emit(AppEvents.MAP_LAYER_LOADED, { timeIndex, timeSlot, loadTime, batchFile: batchInfo.batchFile });
+            
+            if (!isFirstLoad) {
+                eventBus.emit(AppEvents.BATCH_TRANSITION_END, { 
+                    batchFile: batchInfo.batchFile,
+                    loadTime 
+                });
+            }
+            
+            // Process any queued batch request
+            if (this._batchTransition.pendingBatchInfo) {
+                const pending = this._batchTransition.pendingBatchInfo;
+                this._batchTransition.pendingBatchInfo = null;
+                // Use setTimeout to avoid deep recursion
+                setTimeout(() => this.loadPMTiles(pending.timeIndex, pending.timeSlot), 0);
+            }
             
             return true;
 
         } catch (error) {
-            this.logger.error(`Failed to load master PMTiles`, error.message);
-            eventBus.emit(AppEvents.MAP_LAYER_ERROR, { timeSlot, error });
+            this.logger.error(`Failed to load batch PMTiles`, error.message);
+            eventBus.emit(AppEvents.MAP_LAYER_ERROR, { timeIndex, timeSlot, error });
+            
+            if (!isFirstLoad) {
+                eventBus.emit(AppEvents.BATCH_TRANSITION_END, { 
+                    batchFile: batchInfo.batchFile,
+                    error: true 
+                });
+            }
             return false;
         } finally {
             this._isLoading = false;
+            this._batchTransition.isTransitioning = false;
         }
     }
 
     /**
-     * Switch to a different time slot without reloading geometry
-     * @param {string} timeSlot - The depth property name (e.g., 'D202512101000')
+     * Wait for a source to fully load its tiles
+     * @param {string} sourceId - Source ID to wait for
+     * @param {string} layerId - Layer ID to check for rendered features  
+     * @param {string} layerName - Source layer name
+     * @returns {Promise} Resolves when source is loaded
      */
-    switchTimeSlot(timeSlot) {
+    _waitForSourceLoad(sourceId, layerId, layerName) {
+        return new Promise((resolve) => {
+            const maxWaitTime = 8000; // 8 second timeout
+            const checkInterval = 50;
+            let elapsed = 0;
+            
+            const checkLoaded = () => {
+                const source = this.map.getSource(sourceId);
+                
+                // Check if source is loaded
+                if (source && this.map.isSourceLoaded(sourceId)) {
+                    // Additional check: try to query features to ensure tiles are actually rendered
+                    try {
+                        const features = this.map.queryRenderedFeatures({ layers: [layerId] });
+                        if (features.length > 0) {
+                            this.logger.debug(`Source ${sourceId} loaded with ${features.length} features`);
+                            resolve();
+                            return;
+                        }
+                    } catch (e) {
+                        // Layer might not be queryable yet
+                    }
+                }
+                
+                elapsed += checkInterval;
+                if (elapsed >= maxWaitTime) {
+                    this.logger.warning(`Source ${sourceId} load timeout after ${maxWaitTime}ms`);
+                    resolve(); // Resolve anyway to prevent hanging
+                    return;
+                }
+                
+                setTimeout(checkLoaded, checkInterval);
+            };
+            
+            // Start checking
+            checkLoaded();
+        });
+    }
+
+    /**
+     * Update feature states for a specific layer
+     * @param {string} sourceId - Source ID
+     * @param {string} layerId - Fill layer ID  
+     * @param {string} layerName - Source layer name
+     */
+    async _updateFeatureStatesForLayer(sourceId, layerId, layerName) {
+        try {
+            const features = this.map.queryRenderedFeatures({ layers: [layerId] });
+            
+            let updatedCount = 0;
+            for (const feature of features) {
+                const geoCode = feature.properties?.geo_code;
+                if (!geoCode) continue;
+                
+                const depth = this._getDepthValue(feature.properties);
+                
+                this.map.setFeatureState(
+                    { source: sourceId, sourceLayer: layerName, id: geoCode },
+                    { depth: depth ?? 0 }
+                );
+                updatedCount++;
+            }
+            
+            this.logger.debug(`Updated ${updatedCount} feature states for layer ${layerId}`);
+        } catch (error) {
+            this.logger.error('Failed to update feature states for layer', error.message);
+        }
+    }
+
+    /**
+     * Perform a smooth layer swap with crossfade
+     * @param {Object} nextIds - Object with fillId, outlineId, sourceId, suffix for new layer
+     */
+    async _performLayerSwap(nextIds) {
+        const currentIds = this._getActiveLayerIds();
+        const fadeDuration = 300; // ms for crossfade
+        const fadeSteps = 15;
+        const stepDuration = fadeDuration / fadeSteps;
+        
+        return new Promise((resolve) => {
+            let step = 0;
+            
+            const animate = () => {
+                step++;
+                const progress = step / fadeSteps;
+                const eased = this._easeInOutQuad(progress);
+                
+                // Fade in new layer
+                if (this.map.getLayer(nextIds.fillId)) {
+                    this.map.setPaintProperty(nextIds.fillId, 'fill-opacity', eased);
+                }
+                
+                // Fade out old layer
+                if (this.map.getLayer(currentIds.fillId)) {
+                    this.map.setPaintProperty(currentIds.fillId, 'fill-opacity', 1 - eased);
+                }
+                
+                if (step < fadeSteps) {
+                    setTimeout(animate, stepDuration);
+                } else {
+                    // Animation complete - clean up old layers
+                    this._cleanupOldBatchLayers(currentIds);
+                    resolve();
+                }
+            };
+            
+            // Start animation
+            animate();
+        });
+    }
+
+    /**
+     * Easing function for smooth transitions
+     */
+    _easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    /**
+     * Clean up old batch layers after transition
+     * @param {Object} layerIds - Object with fillId, outlineId, sourceId
+     */
+    _cleanupOldBatchLayers(layerIds) {
+        try {
+            this._cleanupLayerById(layerIds.fillId);
+            this._cleanupLayerById(layerIds.outlineId);
+            
+            if (this.map.getSource(layerIds.sourceId)) {
+                this.map.removeSource(layerIds.sourceId);
+            }
+            
+            this.logger.debug(`Cleaned up old batch layers: ${layerIds.sourceId}`);
+        } catch (error) {
+            this.logger.warning('Error cleaning up old layers', error.message);
+        }
+    }
+
+    /**
+     * Safely remove a layer by ID
+     * @param {string} layerId - Layer ID to remove
+     */
+    _cleanupLayerById(layerId) {
+        if (this.map.getLayer(layerId)) {
+            this.map.removeLayer(layerId);
+        }
+    }
+
+    /**
+     * Get the active fill layer ID (for compatibility with methods that reference 'pmtiles-layer')
+     * @returns {string} Active fill layer ID
+     */
+    _getActiveFillLayerId() {
+        const suffix = this._batchTransition.activeLayerSuffix || 'A';
+        return `pmtiles-layer-${suffix}`;
+    }
+
+    /**
+     * Get the active source ID
+     * @returns {string} Active source ID
+     */
+    _getActiveSourceId() {
+        const suffix = this._batchTransition.activeLayerSuffix || 'A';
+        return `pmtiles-source-${suffix}`;
+    }
+
+    /**
+     * Switch to a different time slot (batch-aware)
+     * If the new time slot is in a different batch, will reload the batch file
+     * @param {number} timeIndex - Global time slot index (0-based)
+     * @param {string} timeSlot - Time slot property name (e.g., 'D202512101000') - kept for display
+     */
+    switchTimeSlot(timeIndex, timeSlot = null) {
+        // Handle legacy call with just timeSlot string
+        if (typeof timeIndex === 'string') {
+            timeSlot = timeIndex;
+            timeIndex = this.currentTimeIndex || 0;
+        }
+        
         if (!this.map || !this._masterPMTilesLoaded) {
-            this.logger.error('Master PMTiles not loaded');
+            this.logger.error('PMTiles not loaded');
             return false;
         }
 
-        if (!this.map.getLayer('pmtiles-layer')) {
+        const activeFillId = this._getActiveFillLayerId();
+        if (!this.map.getLayer(activeFillId)) {
             this.logger.error('PMTiles layer not found');
             return false;
+        }
+
+        // Get batch info for this time index
+        const batchInfo = this._getBatchForIndex(timeIndex);
+        
+        // Check if we need to load a different batch (smooth transition)
+        if (batchInfo.batchIndex !== this.batchConfig.currentBatchIndex) {
+            this.logger.info(`Transitioning to batch: ${batchInfo.batchFile}`);
+            return this.loadPMTiles(timeIndex, timeSlot);
         }
 
         try {
             const switchStartTime = performance.now();
             
-            // Update current depth property
+            // Update current indices
+            this.currentTimeIndex = timeIndex;
+            this.currentLocalIndex = batchInfo.localIndex;
             this.currentDepthProperty = timeSlot;
             
-            // Create new depth expression for this time slot
-            const depthExpression = this._getDepthExpression(timeSlot);
-            const fillColorExpression = this._getFillColorExpression(depthExpression, this.currentLayerType);
-            
-            // Update the fill-color paint property (no geometry reload!)
-            this.map.setPaintProperty('pmtiles-layer', 'fill-color', fillColorExpression);
-            
-            // Update stored config
-            if (this.currentLayerConfig?.fill) {
-                this.currentLayerConfig.fill.paint['fill-color'] = fillColorExpression;
-            }
+            // Update feature states for the new time index
+            // This re-extracts depth values from flood_depths arrays at the new index
+            this._scheduleFeatureStateUpdate();
             
             const switchTime = (performance.now() - switchStartTime) / 1000;
-            this.logger.info(`Switched to ${timeSlot} in ${switchTime.toFixed(3)}s`);
-            eventBus.emit(AppEvents.MAP_LAYER_LOADED, { timeSlot, loadTime: switchTime, switchOnly: true });
+            this.logger.debug(`Switched to index ${batchInfo.localIndex} in ${switchTime.toFixed(3)}s`);
+            eventBus.emit(AppEvents.MAP_LAYER_LOADED, { timeIndex, timeSlot, loadTime: switchTime, switchOnly: true });
             
             // Update statistics for the new time slot after a small delay to allow rendering
             setTimeout(() => this._throttledUpdateStats(), 100);
@@ -756,23 +1122,26 @@ class MapManager {
         this.currentLayerType = layerType;
         this.logger.info(`Changing to ${layerType} visualization`);
         
-        if (this.map.getLayer('pmtiles-layer')) {
-            const depthExpression = this._getDepthExpression(this.currentDepthProperty);
-            const fillColorExpression = this._getFillColorExpression(depthExpression, layerType);
-            this.map.setPaintProperty('pmtiles-layer', 'fill-color', fillColorExpression);
+        const activeFillId = this._getActiveFillLayerId();
+        if (this.map.getLayer(activeFillId)) {
+            const fillColorExpression = this._getFeatureStateColorExpression(layerType);
+            this.map.setPaintProperty(activeFillId, 'fill-color', fillColorExpression);
             this.logger.success(`Layer updated to ${layerType}`);
         }
     }
 
     _removeExistingLayers() {
-        ['pmtiles-layer', 'pmtiles-outline'].forEach(id => {
+        // Clean up both A and B layers (double-buffer system)
+        ['pmtiles-layer-A', 'pmtiles-outline-A', 'pmtiles-layer-B', 'pmtiles-outline-B'].forEach(id => {
             if (this.map.getLayer(id)) this.map.removeLayer(id);
         });
-        if (this.map.getSource('pmtiles-source')) {
-            this.map.removeSource('pmtiles-source');
-        }
+        ['pmtiles-source-A', 'pmtiles-source-B'].forEach(id => {
+            if (this.map.getSource(id)) this.map.removeSource(id);
+        });
         // Reset master loaded flag since we removed the layers
         this._masterPMTilesLoaded = false;
+        // Reset batch transition state
+        this._batchTransition.activeLayerSuffix = 'A';
         // Note: ward-boundaries source is persistent, don't remove it
     }
 
@@ -844,10 +1213,23 @@ class MapManager {
     }
 
     _setupClickHandler() {
-        this.map.on('click', 'pmtiles-layer', (e) => {
-            if (!e.features?.[0]) return;
+        // Use event delegation for click handling on all pmtiles layers
+        this.map.on('click', (e) => {
+            // Find which flood layer was clicked
+            const activeFillId = this._getActiveFillLayerId();
+            const features = this.map.queryRenderedFeatures(e.point, { layers: [activeFillId] });
             
-            const properties = e.features[0].properties;
+            if (!features || features.length === 0) return;
+            
+            const feature = features[0];
+            const properties = feature.properties;
+            
+            // Debug: Log raw properties to understand data format
+            console.log('Feature properties:', properties);
+            console.log('flood_depths type:', typeof properties.flood_depths);
+            console.log('flood_depths value:', properties.flood_depths);
+            console.log('currentLocalIndex:', this.currentLocalIndex);
+            
             const depth = this._getDepthValue(properties);
             
             const popupHTML = this._buildPopupHTML(depth, properties);
@@ -863,7 +1245,7 @@ class MapManager {
 
     _buildPopupHTML(depth, properties) {
         const timeLabel = this._formatTimeSlotLabel(this.currentDepthProperty);
-        let html = `<div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">📍 Flood Depth at ${timeLabel}</div>`;
+        let html = `<div style="font-weight: 600; margin-bottom: 8px; font-size: 14px;">${timeLabel}</div>`;
         
         if (depth !== null && !isNaN(depth)) {
             const { color, label, textColor } = this._getDepthStyle(depth);
@@ -920,17 +1302,20 @@ class MapManager {
     }
 
     _setupCursorInteractions() {
-        this.map.on('mouseenter', 'pmtiles-layer', () => {
-            this.map.getCanvas().style.cursor = 'pointer';
-        });
-        this.map.on('mouseleave', 'pmtiles-layer', () => {
-            this.map.getCanvas().style.cursor = '';
+        // Use map-level mousemove for cursor changes
+        this.map.on('mousemove', (e) => {
+            const activeFillId = this._getActiveFillLayerId();
+            if (!this.map.getLayer(activeFillId)) return;
+            
+            const features = this.map.queryRenderedFeatures(e.point, { layers: [activeFillId] });
+            this.map.getCanvas().style.cursor = features.length > 0 ? 'pointer' : '';
         });
     }
 
     setLayerOpacity(opacity) {
-        if (this.map?.getLayer('pmtiles-layer')) {
-            this.map.setPaintProperty('pmtiles-layer', 'fill-opacity', opacity);
+        const activeFillId = this._getActiveFillLayerId();
+        if (this.map?.getLayer(activeFillId)) {
+            this.map.setPaintProperty(activeFillId, 'fill-opacity', opacity);
         }
     }
 
@@ -943,8 +1328,9 @@ class MapManager {
         // Store current layer visibility states
         const layerStates = this._saveLayerStates();
         
-        // Store current depth property before style change
+        // Store current indices before style change
         const currentDepthProp = this.currentDepthProperty;
+        const currentLocalIdx = this.currentLocalIndex;
         
         this.map.setStyle(this.baseStyles[style]);
 
@@ -965,21 +1351,41 @@ class MapManager {
                 }
             }
             
-            // Re-add PMTiles layers with current depth property
+            // Re-add PMTiles layers with current local index
             if (this.currentLayerConfig) {
                 try {
-                    this.map.addSource('pmtiles-source', this.currentLayerConfig.sourceConfig);
+                    // Use the active layer suffix for consistency
+                    const suffix = this._batchTransition.activeLayerSuffix || 'A';
+                    const sourceId = `pmtiles-source-${suffix}`;
+                    const fillId = `pmtiles-layer-${suffix}`;
+                    const outlineId = `pmtiles-outline-${suffix}`;
                     
-                    // Update fill config with current depth property
-                    const depthExpression = this._getDepthExpression(currentDepthProp);
-                    const fillColorExpression = this._getFillColorExpression(depthExpression, this.currentLayerType);
-                    this.currentLayerConfig.fill.paint['fill-color'] = fillColorExpression;
+                    // Re-add source with promoteId for feature-state
+                    const sourceConfig = {
+                        ...this.currentLayerConfig.sourceConfig,
+                        promoteId: 'geo_code'
+                    };
+                    this.map.addSource(sourceId, sourceConfig);
                     
-                    this.map.addLayer(this.currentLayerConfig.fill);
+                    // Use feature-state based color expression
+                    const fillColorExpression = this._getFeatureStateColorExpression(this.currentLayerType);
+                    
+                    // Update stored config with new IDs
+                    const restoredFillConfig = {
+                        ...this.currentLayerConfig.fill,
+                        id: fillId,
+                        source: sourceId,
+                        paint: {
+                            ...this.currentLayerConfig.fill.paint,
+                            'fill-color': fillColorExpression
+                        }
+                    };
+                    
+                    this.map.addLayer(restoredFillConfig);
                     this.map.addLayer({
-                        id: 'pmtiles-outline',
+                        id: outlineId,
                         type: 'line',
-                        source: 'pmtiles-source',
+                        source: sourceId,
                         'source-layer': this.currentLayerConfig.layerName,
                         paint: {
                             'line-color': '#0f172a',
@@ -988,11 +1394,18 @@ class MapManager {
                         }
                     });
                     
+                    // Update stored config
+                    this.currentLayerConfig.fill = restoredFillConfig;
+                    
                     this._masterPMTilesLoaded = true;
                     this.currentDepthProperty = currentDepthProp;
+                    this.currentLocalIndex = currentLocalIdx;
+                    
+                    // Schedule feature state update for restored layers
+                    this._scheduleFeatureStateUpdate();
                     
                     if (!layerStates.floodDepth) {
-                        this.map.setLayoutProperty('pmtiles-layer', 'visibility', 'none');
+                        this.map.setLayoutProperty(fillId, 'visibility', 'none');
                     }
                     this.logger.success('PMTiles layers restored');
                 } catch (error) {
@@ -1015,11 +1428,12 @@ class MapManager {
     }
 
     _saveLayerStates() {
+        const activeFillId = this._getActiveFillLayerId();
         const states = {
             wardBoundaries: this.map.getLayer('ward-outline') ? 
                 this.map.getLayoutProperty('ward-outline', 'visibility') !== 'none' : false,
-            floodDepth: this.map.getLayer('pmtiles-layer') ? 
-                this.map.getLayoutProperty('pmtiles-layer', 'visibility') !== 'none' : true,
+            floodDepth: this.map.getLayer(activeFillId) ? 
+                this.map.getLayoutProperty(activeFillId, 'visibility') !== 'none' : true,
             lulcClasses: []
         };
         
@@ -1151,9 +1565,10 @@ class MapManager {
     _updateStatsInternal() {
         if (!this.map?.loaded()) return;
 
-        if (this.map.getLayer('pmtiles-layer')) {
+        const activeFillId = this._getActiveFillLayerId();
+        if (this.map.getLayer(activeFillId)) {
             try {
-                const features = this.map.queryRenderedFeatures({ layers: ['pmtiles-layer'] });
+                const features = this.map.queryRenderedFeatures({ layers: [activeFillId] });
                 this.statsTracker.updateFeatures(features.length);
                 
                 const summary = this._summarizeVisibleFlood(features);
@@ -1178,7 +1593,8 @@ class MapManager {
     }
 
     hasLayer() {
-        return this.map?.getLayer('pmtiles-layer') != null;
+        const activeFillId = this._getActiveFillLayerId();
+        return this.map?.getLayer(activeFillId) != null;
     }
 
     _summarizeVisibleFlood(features) {
@@ -1256,55 +1672,30 @@ class MapManager {
         };
     }
 
-    _getDepthExpression(timeSlot = null) {
-        // Use the specific time slot property (e.g., 'D202512101000')
-        const property = timeSlot || this.currentDepthProperty || 'D202512101000';
-        // Return raw property value - will be handled in fill color expression
-        return ['get', property];
-    }
-
-    _getFillColorExpression(depthExpression, layerType = 'multiclass') {
-        // Check if the value is null or not a valid number
-        const hasValidDepth = [
-            'all',
-            ['!=', depthExpression, null],
-            ['==', ['typeof', depthExpression], 'number']
-        ];
-        
-        if (layerType === 'binary') {
-            return [
-                'case',
-                ['!', hasValidDepth], 'rgba(0, 0, 0, 0)', // No data - fully transparent
-                ['<=', ['to-number', depthExpression, 0], 0], 'rgba(0, 0, 0, 0)', // Zero depth - fully transparent
-                ['>', ['to-number', depthExpression, 0], 1], '#ef4444', // Flooded (>1m) - red
-                '#10b981' // Not flooded - green
-            ];
-        }
-        
-        // Multiclass - gradient based on depth
-        // Handle null/invalid/zero values by showing fully transparent
-        return [
-            'case',
-            ['!', hasValidDepth], 'rgba(0, 0, 0, 0)', // No data - fully transparent
-            ['<=', ['to-number', depthExpression, 0], 0], 'rgba(0, 0, 0, 0)', // Zero depth - fully transparent
-            [
-                'interpolate', ['linear'], ['to-number', depthExpression, 0],
-                0.001, '#f5fbff',
-                0.2, '#d6ecff',
-                0.5, '#9dd1ff',
-                1.0, '#5aa8ff',
-                2.0, '#1e6ddf',
-                3.0, '#0b3a8c'
-            ]
-        ];
-    }
-
+    /**
+     * Get depth value from feature properties using flood_depths array
+     * Handles both native arrays and JSON string arrays
+     * @param {Object} properties - Feature properties
+     * @returns {number|null} Depth value or null
+     */
     _getDepthValue(properties) {
         if (!properties) return null;
         
-        // Get the current time slot property value
-        if (this.currentDepthProperty) {
-            const value = properties[this.currentDepthProperty];
+        let floodDepths = properties.flood_depths;
+        
+        // Handle JSON string case - PMTiles may store arrays as JSON strings
+        if (typeof floodDepths === 'string') {
+            try {
+                floodDepths = JSON.parse(floodDepths);
+            } catch (e) {
+                console.error('Failed to parse flood_depths:', e);
+                return null;
+            }
+        }
+        
+        // Get depth from flood_depths array at current local index
+        if (Array.isArray(floodDepths) && this.currentLocalIndex < floodDepths.length) {
+            const value = floodDepths[this.currentLocalIndex];
             // Check for null, undefined, or non-number values
             if (value === null || value === undefined) {
                 return null;
@@ -1317,6 +1708,141 @@ class MapManager {
         }
         
         return null;
+    }
+
+    /**
+     * Setup listener to update feature states when tiles load
+     * This is needed because flood_depths is stored as JSON string in PMTiles
+     */
+    _setupFeatureStateUpdater() {
+        // Update feature states when source data changes (new tiles loaded)
+        this.map.on('sourcedata', (e) => {
+            // Check if it's one of our PMTiles sources
+            if ((e.sourceId === 'pmtiles-source-A' || e.sourceId === 'pmtiles-source-B') && e.isSourceLoaded) {
+                this._scheduleFeatureStateUpdate();
+            }
+        });
+        
+        // Also update on move end (viewport change loads new tiles)
+        this.map.on('moveend', () => {
+            if (this._masterPMTilesLoaded) {
+                this._scheduleFeatureStateUpdate();
+            }
+        });
+    }
+
+    /**
+     * Schedule a feature state update (debounced to avoid excessive updates)
+     */
+    _scheduleFeatureStateUpdate() {
+        if (this._pendingFeatureStateUpdate) return;
+        
+        this._pendingFeatureStateUpdate = true;
+        
+        // Use requestAnimationFrame for smooth updates
+        requestAnimationFrame(() => {
+            this._updateFeatureStates();
+            this._pendingFeatureStateUpdate = false;
+        });
+    }
+
+    /**
+     * Update feature states with depth values from flood_depths arrays
+     * This extracts the depth at currentLocalIndex and sets it as feature-state
+     */
+    _updateFeatureStates() {
+        const activeFillId = this._getActiveFillLayerId();
+        const activeSourceId = this._getActiveSourceId();
+        
+        if (!this.map || !this.map.getLayer(activeFillId)) return;
+        
+        const layerName = this.currentLayerConfig?.layerName;
+        if (!layerName) return;
+        
+        try {
+            // Query all rendered features in the current viewport
+            const features = this.map.queryRenderedFeatures({ layers: [activeFillId] });
+            
+            let updatedCount = 0;
+            for (const feature of features) {
+                const geoCode = feature.properties?.geo_code;
+                if (!geoCode) continue;
+                
+                // Get depth value at current index
+                const depth = this._getDepthValue(feature.properties);
+                
+                // Set feature state
+                this.map.setFeatureState(
+                    { source: activeSourceId, sourceLayer: layerName, id: geoCode },
+                    { depth: depth ?? 0 }
+                );
+                updatedCount++;
+            }
+            
+            if (updatedCount > 0) {
+                this.logger.debug(`Updated ${updatedCount} feature states for index ${this.currentLocalIndex}`);
+            }
+        } catch (error) {
+            this.logger.error('Failed to update feature states', error.message);
+        }
+    }
+
+    /**
+     * Get fill color expression based on feature-state depth
+     * This is used because MapLibre can't parse JSON string arrays in expressions
+     */
+    _getFeatureStateColorExpression(layerType = 'multiclass') {
+        // Use feature-state 'depth' which is set by _updateFeatureStates
+        const depthValue = ['coalesce', ['feature-state', 'depth'], 0];
+        
+        if (layerType === 'binary') {
+            return [
+                'case',
+                // If depth is 0 or less, transparent
+                ['<=', depthValue, 0], 'rgba(0, 0, 0, 0)',
+                // Flooded (>1m) - red
+                ['>', depthValue, 1], '#ef4444',
+                // Not flooded - green
+                '#10b981'
+            ];
+        }
+        
+        // Multiclass - gradient based on depth
+        return [
+            'case',
+            // If depth is 0 or less, transparent
+            ['<=', depthValue, 0], 'rgba(0, 0, 0, 0)',
+            // Normal interpolation for valid depth values
+            [
+                'interpolate', ['linear'], depthValue,
+                0.001, '#f5fbff',
+                0.2, '#d6ecff',
+                0.5, '#9dd1ff',
+                1.0, '#5aa8ff',
+                2.0, '#1e6ddf',
+                3.0, '#0b3a8c'
+            ]
+        ];
+    }
+
+    /**
+     * Legacy method - kept for compatibility but now unused
+     * @deprecated Use _getFeatureStateColorExpression instead
+     */
+    _getDepthExpression(localIndex = 0) {
+        // This doesn't work with JSON string arrays in PMTiles
+        // Kept for reference only
+        const index = typeof localIndex === 'number' ? localIndex : this.currentLocalIndex || 0;
+        return ['at', index, ['get', 'flood_depths']];
+    }
+
+    /**
+     * Legacy method - kept for compatibility
+     * @deprecated Use _getFeatureStateColorExpression instead
+     */
+    _getFillColorExpression(depthExpression, layerType = 'multiclass') {
+        // Delegate to feature-state based expression
+        return this._getFeatureStateColorExpression(layerType);
     }
 
     /**

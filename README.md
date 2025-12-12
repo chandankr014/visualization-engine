@@ -1383,6 +1383,60 @@ window.pmtilesApp.getVersion()
 
 ## 🆕 Recent Updates
 
+### Version 2.3.0 (December 2025) - Stability & Performance
+
+#### 🔧 Stability Improvements
+
+1. **Double-Buffering for Smooth Batch Transitions**
+   - Implemented A/B buffer system to eliminate flicker during batch switches
+   - Old layer stays visible until new tiles are fully loaded and rendered
+   - Uses `requestIdleCallback` to detect when tiles are actually rendered
+   - Maximum 8-second timeout prevents indefinite loading states
+
+2. **Defensive Error Handling**
+   - All event handlers wrapped in try-catch blocks
+   - Null-safe optional chaining for module access (`mapManager?.method()`)
+   - Early return guards when map is not ready
+   - Prevents cascading failures from single component issues
+
+3. **File Caching System (Server)**
+   - New `FileCache` class for thread-safe file caching
+   - Caches files up to 1024 KB (configurable)
+   - Total cache limit: 50 MB
+   - Automatic cache invalidation on file modification
+   - X-Cache header indicates cache hits
+
+#### 🐛 Bug Fixes
+
+1. **Flood Layer Toggle Button Fixed**
+   - Added `toggleFloodLayer()` method to map-manager
+   - Toggles both A and B buffer layers correctly
+   - Works with double-buffering system
+
+2. **Improved Tile Load Detection**
+   - Queries rendered features to verify tiles are painted
+   - Atomic visibility swap (show new, hide old in same frame)
+   - Old buffer removed after 200ms stability period
+
+3. **Feature-State Based Styling** (from 2.2.1)
+   - Fixed black tiles issue with batch PMTiles
+   - Uses `map.setFeatureState()` for depth values
+   - Parses JSON string arrays in JavaScript instead of MapLibre expressions
+
+#### ⚡ Performance Improvements
+
+1. **Server-Side File Caching**
+   - Small files (<1024 KB) cached in memory
+   - Reduces disk I/O for frequently accessed assets
+   - Thread-safe implementation for concurrent requests
+
+2. **Optimized Batch Transitions**
+   - Pre-loads feature states before layer swap
+   - Uses `requestAnimationFrame` for synchronized updates
+   - Minimizes paint operations during transitions
+
+---
+
 ### Version 2.2.0 (December 2025)
 
 #### 🐛 Bug Fixes

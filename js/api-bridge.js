@@ -80,7 +80,7 @@ class APIBridge {
 
     /**
      * Build PMTiles URL for a given time slot (legacy - now returns master file URL)
-     * @deprecated Use getMasterPMTilesUrl() instead
+     * @deprecated Use getBatchPMTilesUrl() instead
      */
     buildPMTilesUrl(timeSlot) {
         // Return master PMTiles file URL for all time slots
@@ -88,10 +88,43 @@ class APIBridge {
     }
 
     /**
-     * Get the master PMTiles file URL
+     * Get the master PMTiles file URL (legacy)
+     * @deprecated Use getBatchPMTilesUrl() for new batch-based system
      */
     getMasterPMTilesUrl() {
         return `${this.baseUrl}/pmtiles/flood/flood_depth_master.pmtiles`;
+    }
+
+    /**
+     * Get batch PMTiles URL for a specific batch file
+     * @param {string} batchFilename - The batch file name (e.g., "D202507130200.pmtiles")
+     * @param {string} floodDir - The flood directory path (default: "pmtiles/flood")
+     */
+    getBatchPMTilesUrl(batchFilename, floodDir = 'pmtiles/flood') {
+        return `${this.baseUrl}/${floodDir}/${batchFilename}`;
+    }
+
+    /**
+     * Calculate batch info for a given global time slot index
+     * @param {number} globalIndex - Global time slot index (0-based)
+     * @param {number} batchSize - Number of time slots per batch (default: 48)
+     * @param {Array} batchFiles - Array of batch file info from server config
+     * @returns {Object} Batch info with filename, localIndex, and batchIndex
+     */
+    getBatchForTimeSlot(globalIndex, batchSize = 48, batchFiles = []) {
+        const batchIndex = Math.floor(globalIndex / batchSize);
+        const localIndex = globalIndex % batchSize;
+        
+        // Get batch file info
+        const batchFile = batchFiles[batchIndex] || batchFiles[batchFiles.length - 1];
+        
+        return {
+            batchIndex,
+            localIndex,
+            globalIndex,
+            batchFile: batchFile?.filename || null,
+            batchPath: batchFile?.path || null
+        };
     }
 
     /**

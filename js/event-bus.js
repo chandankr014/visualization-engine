@@ -131,6 +131,8 @@ const AppEvents = {
     MAP_LAYER_ERROR: 'map:layer-error',
     MAP_CLICK: 'map:click',
     MAP_MOVE: 'map:move',
+    BATCH_TRANSITION_START: 'map:batch-transition-start',
+    BATCH_TRANSITION_END: 'map:batch-transition-end',
     
     // UI events
     OPACITY_CHANGE: 'ui:opacity-change',
@@ -151,7 +153,11 @@ const AppEvents = {
     POLYGON_DRAW_END: 'polygon:draw-end',
     POLYGON_CLEARED: 'polygon:cleared',
     POLYGON_ANALYSIS_COMPLETE: 'polygon:analysis-complete',
-    POLYGON_TIMESERIES_COMPLETE: 'polygon:timeseries-complete'
+    POLYGON_TIMESERIES_COMPLETE: 'polygon:timeseries-complete',
+    
+    // Precipitation Graph events
+    PRECIP_GRAPH_TOGGLE: 'precip:toggle',
+    PRECIP_GRAPH_CLICK: 'precip:click'
 };
 
 // Export singleton instance

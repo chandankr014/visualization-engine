@@ -44,6 +44,7 @@ class UIController {
             toggleFloodDepth: document.getElementById('toggleFloodDepth'),
             toggleRoadways: document.getElementById('toggleRoadways'),
             toggleHotspots: document.getElementById('toggleHotspots'),
+            togglePrecipGraph: document.getElementById('togglePrecipGraph'),
             lulcDropdown: document.getElementById('lulcDropdown'),
             lulcDropdownBtn: document.getElementById('lulcDropdownBtn'),
             lulcDropdownMenu: document.getElementById('lulcDropdownMenu'),
@@ -83,7 +84,7 @@ class UIController {
      */
     _setupEventListeners() {
         const { opacitySlider, baseMapStyle, floodLayerType, 
-                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, toggleHotspots,
+                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, toggleHotspots, togglePrecipGraph,
                 lulcDropdown, lulcDropdownBtn, lulcSelectAll, lulcClassToggles } = this.elements;
         
         // Opacity slider with debounce
@@ -123,6 +124,10 @@ class UIController {
 
         toggleHotspots?.addEventListener('change', (e) => {
             eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'hotspots', visible: e.target.checked });
+        });
+
+        togglePrecipGraph?.addEventListener('change', (e) => {
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'precipitation-graph', visible: e.target.checked });
         });
 
         // LULC dropdown toggle
@@ -375,6 +380,81 @@ class UIController {
      */
     isLoading() {
         return this.state.isLoading;
+    }
+
+    /**
+     * Show a subtle batch transition indicator (non-blocking)
+     * This appears briefly during batch switches without blocking interaction
+     */
+    showBatchTransitionIndicator() {
+        // Create indicator if it doesn't exist
+        if (!this._batchTransitionIndicator) {
+            this._batchTransitionIndicator = document.createElement('div');
+            this._batchTransitionIndicator.className = 'batch-transition-indicator';
+            this._batchTransitionIndicator.innerHTML = `
+                <div class="batch-transition-spinner"></div>
+                <span>Loading next batch...</span>
+            `;
+            this._batchTransitionIndicator.style.cssText = `
+                position: fixed;
+                bottom: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(30, 58, 138, 0.9);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 12px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                z-index: 1000;
+                box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+                opacity: 0;
+                transition: opacity 0.2s ease;
+            `;
+            document.body.appendChild(this._batchTransitionIndicator);
+            
+            // Add spinner styles if not already present
+            if (!document.getElementById('batch-transition-styles')) {
+                const style = document.createElement('style');
+                style.id = 'batch-transition-styles';
+                style.textContent = `
+                    .batch-transition-spinner {
+                        width: 14px;
+                        height: 14px;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        border-top-color: white;
+                        border-radius: 50%;
+                        animation: batch-spin 0.8s linear infinite;
+                    }
+                    @keyframes batch-spin {
+                        to { transform: rotate(360deg); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+        
+        // Show with fade-in
+        this._batchTransitionIndicator.style.display = 'flex';
+        requestAnimationFrame(() => {
+            this._batchTransitionIndicator.style.opacity = '1';
+        });
+    }
+
+    /**
+     * Hide the batch transition indicator
+     */
+    hideBatchTransitionIndicator() {
+        if (this._batchTransitionIndicator) {
+            this._batchTransitionIndicator.style.opacity = '0';
+            setTimeout(() => {
+                if (this._batchTransitionIndicator) {
+                    this._batchTransitionIndicator.style.display = 'none';
+                }
+            }, 200);
+        }
     }
 
     /**

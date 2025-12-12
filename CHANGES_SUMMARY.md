@@ -1,6 +1,238 @@
 # PMTiles Viewer - Changes Summary
 
-## Latest Update: Master PMTiles Time-Series Architecture (December 2025)
+## Latest Update: Smooth Batch Transitions (December 2025)
+
+### Issue: Layer Flickering During Batch Switches
+
+**Problem**: When the time slider moved from one batch to another, the flood layer would flicker or briefly disappear. This happened because the old layer was removed before the new batch was fully loaded.
+
+**User Impact**: Poor UX - users would see a blank/black map momentarily when scrubbing across batch boundaries.
+
+### Solution: Double-Buffering Layer Swap
+
+Implemented a **double-buffering** approach where:
+1. **Two layer sets** (`A` and `B`) are available
+2. **New batch loads in background**: While the current layer remains visible, the next batch loads into the alternate layer set
+3. **Smooth crossfade**: Once the new batch is fully loaded, a 300ms crossfade transition swaps the layers
+4. **Old layer cleanup**: The previous layer is removed after the transition completes
+
+**Key Implementation Details**:
+
+```javascript
+// Layer naming convention for double-buffering
+_getActiveLayerIds() {
+    const suffix = this._batchTransition.activeLayerSuffix; // 'A' or 'B'
+    return {
+        fillId: `pmtiles-layer-${suffix}`,
+        outlineId: `pmtiles-outline-${suffix}`,
+        sourceId: `pmtiles-source-${suffix}`
+    };
+}
+
+// Wait for tiles to load before transitioning
+await this._waitForSourceLoad(nextIds.sourceId, nextIds.fillId, layerName);
+
+// Smooth crossfade transition
+await this._performLayerSwap(nextIds); // 300ms crossfade
+
+// Clean up old layers after transition
+this._cleanupOldBatchLayers(currentIds);
+```
+
+**Event Coordination**:
+- `BATCH_TRANSITION_START`: Emitted when a batch switch begins, pauses playback
+- `BATCH_TRANSITION_END`: Emitted when transition completes, resumes playback
+- Subtle loading indicator appears at bottom of screen during transitions
+
+**Request Queuing**:
+- If user rapidly scrubs through multiple batches, requests are queued
+- Only the latest batch request is processed, preventing race conditions
+
+### Files Modified
+
+1. **map-manager.js**:
+   - Added `_batchTransition` state object with `activeLayerSuffix`, `isTransitioning`, `pendingBatchInfo`
+   - Added `_getActiveLayerIds()` and `_getNextLayerIds()` for layer naming
+   - Added `_waitForSourceLoad()` to ensure tiles are rendered before swap
+   - Added `_performLayerSwap()` with eased crossfade animation
+   - Added `_cleanupOldBatchLayers()` for cleanup after transition
+   - Updated all layer references to use dynamic IDs
+   
+2. **main.js**:
+   - Added handlers for `BATCH_TRANSITION_START` and `BATCH_TRANSITION_END` events
+   
+3. **ui-controller.js**:
+   - Added `showBatchTransitionIndicator()` and `hideBatchTransitionIndicator()` methods
+
+4. **time-controller.js** (existing):
+   - Already had handlers to pause playback during transitions
+
+### Technical Notes
+
+- **No race conditions**: `isTransitioning` flag prevents concurrent batch loads
+- **Graceful timeout**: Source load waits up to 8 seconds before proceeding
+- **Request queuing**: Rapid slider scrubbing only processes the final batch
+- **Modular design**: All transition logic contained within `MapManager`
+
+---
+
+## Previous Update: Feature-State Based Styling Fix (December 2025)
+
+### Issue: Black Tiles Instead of Colored Flood Visualization
+
+**Problem**: After implementing batch-based PMTiles with `flood_depths` arrays, all flood tiles were rendering as **black** instead of the expected blue gradient colors. However, clicking on a tile correctly showed the depth value in the popup (e.g., "0.566 m").
+
+**Root Cause**: 
+- PMTiles (and vector tiles in general) store complex data types like arrays as **JSON strings**, not native JavaScript arrays
+- The original code used MapLibre's `['at', index, ['get', 'flood_depths']]` expression
+- This expression **does not work** because:
+  1. `['get', 'flood_depths']` returns a **string** like `"[0.0, 0.1, 0.2, ...]"`
+  2. MapLibre's `['at', ...]` operator expects a native array, not a string
+  3. The expression silently fails and returns `null`
+  4. The color fallback logic was not properly handling this, resulting in black
+
+**Why the popup worked**: The JavaScript click handler used `JSON.parse()` to convert the string to an array, which worked correctly. But MapLibre expressions don't have a `JSON.parse` equivalent.
+
+### Solution: Feature-State Based Styling
+
+Since MapLibre expressions cannot parse JSON strings, we use **feature-state** to pass the depth values:
+
+1. **On tile load**: Query all rendered features, parse `flood_depths` JSON in JavaScript, extract the value at `currentLocalIndex`
+2. **Set feature-state**: Use `map.setFeatureState()` to set `depth` value for each feature by `geo_code`
+3. **Style with feature-state**: Use `['feature-state', 'depth']` in the color expression
+
+**Key Code Changes**:
+
+```javascript
+// Source must have promoteId to use feature-state
+this.map.addSource('pmtiles-source', {
+    type: 'vector',
+    url: `pmtiles://${pmtilesUrl}`,
+    promoteId: 'geo_code'  // Use geo_code as feature ID
+});
+
+// Color expression uses feature-state instead of property
+_getFeatureStateColorExpression(layerType) {
+    const depthValue = ['coalesce', ['feature-state', 'depth'], 0];
+    return [
+        'case',
+        ['<=', depthValue, 0], 'rgba(0, 0, 0, 0)',
+        ['interpolate', ['linear'], depthValue,
+            0.001, '#f5fbff',
+            0.2, '#d6ecff',
+            0.5, '#9dd1ff',
+            1.0, '#5aa8ff',
+            2.0, '#1e6ddf',
+            3.0, '#0b3a8c'
+        ]
+    ];
+}
+
+// Update feature states on tile load and time change
+_updateFeatureStates() {
+    const features = this.map.queryRenderedFeatures({ layers: ['pmtiles-layer'] });
+    for (const feature of features) {
+        const geoCode = feature.properties?.geo_code;
+        const depth = this._getDepthValue(feature.properties); // Uses JSON.parse
+        this.map.setFeatureState(
+            { source: 'pmtiles-source', sourceLayer: layerName, id: geoCode },
+            { depth: depth ?? 0 }
+        );
+    }
+}
+```
+
+### Why This Approach Works
+
+1. **JavaScript can parse JSON**: `_getDepthValue()` parses the JSON string to extract array values
+2. **Feature-state is dynamic**: Values can be updated without reloading tiles
+3. **Time switching is fast**: Just update feature states, no tile reload needed
+4. **Geometry stays the same**: The PMTiles geometry is loaded once per batch
+
+### Lessons Learned
+
+1. **Vector tiles serialize complex types**: Arrays and objects become JSON strings in vector tiles
+2. **MapLibre expressions are limited**: No `JSON.parse`, `eval`, or custom functions
+3. **Feature-state is powerful**: It's the right solution for dynamic, computed values
+4. **Always test with real data**: The issue wasn't visible until testing with actual PMTiles
+
+---
+
+## Previous Update: Batch-Based PMTiles with Array Flood Depths (December 2025)
+
+### Overview
+Redesigned the visualization engine to use **batched PMTiles files** with consolidated `flood_depths` arrays. Each batch file contains 48 time slots (4 hours of data at 5-minute intervals). This significantly reduces file count and improves data organization while maintaining fast time-slot switching.
+
+### New Data Format
+Each batch PMTiles file (e.g., `D202507130200.pmtiles`) contains:
+- **Consistent geometry**: Grid cells identified by `geo_code`
+- **Consolidated flood depths**: Single `flood_depths` array property containing 48 depth values
+- **Array indexing**: `flood_depths[0]` = first time slot, `flood_depths[47]` = last time slot
+- **Null handling**: All null values converted to 0.0
+
+**Example GeoJSON feature:**
+```json
+{
+  "geo_code": "FMK55P9P9",
+  "flood_depths": [0.0, 0.0, ..., 0.082, 0.107, 0.159, 0.207, 0.225, 0.241, 0.265, 0.291]
+}
+```
+
+### Key Changes
+
+#### 1. Config Updates (`config.py`)
+- `BATCH_SIZE = 48` - Number of time slots per batch file
+- `BATCH_DURATION_HOURS = 4` - Each batch covers 4 hours
+- Added `get_batch_start_times()` - List of batch start timestamps
+- Added `get_batch_files()` - List of batch file info with time ranges
+- Added `get_batch_for_time_slot(index)` - Get batch file and local index for any time slot
+- Added `get_time_slot_info(index)` - Complete info including batch details
+
+#### 2. Server Updates (`server.py`)
+- Updated `/api/config` endpoint to include:
+  - `batchSize`: 48
+  - `batchDurationHours`: 4
+  - `batchFiles`: Array of batch file info with filename, startTime, endTime, paths
+  - `totalTimeSlots`: Total number of time slots
+
+#### 3. API Bridge Updates (`js/api-bridge.js`)
+- Added `getBatchPMTilesUrl(batchFilename, floodDir)` - Build URL for specific batch file
+- Added `getBatchForTimeSlot(globalIndex, batchSize, batchFiles)` - Calculate batch info
+
+#### 4. Map Manager Updates (`js/map-manager.js`) - **MAJOR REFACTOR**
+- Added `batchConfig` object tracking:
+  - `batchSize`: 48 (default)
+  - `batchFiles`: Array of batch file info
+  - `currentBatchIndex`: Currently loaded batch
+  - `currentBatchFile`: Current batch filename
+- Added `currentTimeIndex` and `currentLocalIndex` for tracking
+- Added `updateBatchConfig(serverConfig)` - Update batch configuration
+- Added `_getBatchForIndex(globalIndex)` - Get batch info for any time index
+- **Feature-state based styling** (see above for details)
+- Added `_setupFeatureStateUpdater()` - Listen for tile loads
+- Added `_scheduleFeatureStateUpdate()` - Debounced update scheduler  
+- Added `_updateFeatureStates()` - Parse flood_depths and set feature states
+- Added `_getFeatureStateColorExpression()` - Color based on feature-state depth
+
+#### 5. Main App Updates (`js/main.js`)
+- Updated TIME_CHANGE handler to pass both index and timeSlot
+- Updated _initializeMap to pass index when loading initial data
+- Updated _initializeModules to call mapManager.updateBatchConfig
+
+### Batch File Naming Convention
+- Format: `D{YYYYMMDDHHmm}.pmtiles`
+- Example: `D202507130200.pmtiles` covers 02:00 - 05:55 on July 13, 2025
+- Each file contains 48 time slots (indices 0-47)
+
+### Performance Benefits
+1. **Reduced file count**: 8 batch files instead of 192+ individual files
+2. **Faster switching**: No file reload when switching within same batch
+3. **Smaller total size**: Array format more efficient than 48 separate properties
+4. **Better caching**: Batch files can be cached effectively
+
+---
+
+## Previous Update: Master PMTiles Time-Series Architecture (December 2025)
 
 ### Overview
 Redesigned the visualization engine to use a **single master PMTiles file** (`flood_depth_master.pmtiles`) containing time-series flood depth data. This eliminates the need to reload geometry when switching time slots - only the color expression is updated based on the selected time property.
