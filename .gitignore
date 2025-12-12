@@ -1,5 +1,5 @@
-*.pmtiles
+# *.pmtiles
+# *.geojson
 *.ipynb
-*.geojson
 __pycache__
 venv
