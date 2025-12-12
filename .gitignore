@@ -1,3 +1,5 @@
 *.pmtiles
 *.ipynb
 *.geojson
+__pycache__
+venv
