@@ -563,7 +563,7 @@ class PrecipitationGraph {
         ctx.fillStyle = '#6b7280';
         ctx.font = '10px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Precip (mm)', 0, 0);
+        ctx.fillText('P (mm)', 0, 0);
         ctx.restore();
     }
 

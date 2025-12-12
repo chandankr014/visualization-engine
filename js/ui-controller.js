@@ -20,8 +20,8 @@ const LEGEND_CONFIGS = {
     binary: {
         title: '🌊 Binary Flood Classification',
         items: [
-            { color: '#10b981', label: 'Depth ≤ 1m', severity: 'safe', severityLabel: 'No Flood' },
-            { color: '#ef4444', label: 'Depth > 1m', severity: 'flood', severityLabel: 'Flood' }
+            { color: '#10b981', label: 'Depth ≤ 1m', severity: 'safe', severityLabel: '' },
+            { color: '#ef4444', label: 'Depth > 1m', severity: 'flood', severityLabel: '' }
         ]
     }
 };
