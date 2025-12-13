@@ -437,7 +437,9 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
                 "initialZoom": 11,
                 "initialStyle": "light",
                 "initialOpacity": 1.0,
-                "statsUpdateInterval": 2000
+                "statsUpdateInterval": 2000,
+                # Google Maps API Key
+                "googleMapsApiKey": config.GOOGLE_MAPS_API_KEY
             }
         })
     

@@ -63,8 +63,8 @@ class PrecipitationGraph {
             left: 20px;
             width: 45vw;
             max-width: 600px;
-            min-width: 350px;
-            background: rgba(255, 255, 255, 0.95);
+            min-width: 400px;
+            background: rgba(255, 255, 255, 1);
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
             padding: 12px;
@@ -119,10 +119,10 @@ class PrecipitationGraph {
             top: 0;
             width: 2px;
             height: 100%;
-            background: #ef4444;
+            background: #0a2534ff;
             pointer-events: none;
             transition: left 0.15s ease-out;
-            box-shadow: 0 0 4px rgba(239, 68, 68, 0.5);
+            box-shadow: 0 0 4px rgba(0, 106, 122, 0.6);
         `;
         canvasWrapper.appendChild(this.pointer);
 
@@ -152,7 +152,7 @@ class PrecipitationGraph {
             display: flex;
             justify-content: space-between;
             margin-top: 4px;
-            font-size: 10px;
+            font-size: 12px;
             color: #9ca3af;
         `;
         timeLabels.innerHTML = `

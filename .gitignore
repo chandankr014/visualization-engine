@@ -3,3 +3,10 @@
 *.ipynb
 __pycache__
 venv
+# Ignore all markdown files except README variants
+*.md
+!README.md
+# Environment variables - DO NOT COMMIT
+.env
+.env.local
+.env.*.local

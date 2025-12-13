@@ -1,0 +1,2 @@
+# Python dependencies for AIResQ AppDeploy
+python-dotenv>=0.19.0

@@ -65,10 +65,17 @@ class APIBridge {
     }
 
     /**
-     * Get hotspots GeoJSON
+     * Get hotspots GeoJSON - Commented out but not removed
      */
-    async getHotspots() {
-        return this._cachedRequest('/api/hotspots', 'hotspots');
+    // async getHotspots() {
+    //     return this._cachedRequest('/api/hotspots', 'hotspots');
+    // }
+
+    /**
+     * Get precipitation data (time series)
+     */
+    async getPrecipitation() {
+        return this._cachedRequest('/api/precipitation', 'precipitation');
     }
 
     /**

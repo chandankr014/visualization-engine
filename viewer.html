@@ -8,7 +8,8 @@
     <title>AIResQ ClimSols | Flood Visualization Engine</title>
     
     <!-- Favicon -->
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <!-- <link rel="icon" type="image/x-icon" href="favicon.ico"> -->
+    <link rel="icon" type="image/x-icon" href="airesq_dark.png">
     
     <!-- Preconnect to CDNs for faster loading -->
     <link rel="preconnect" href="https://unpkg.com" crossorigin>
@@ -25,14 +26,14 @@
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-    <div class="container">
+    <div class="container" style="background-color: hsla(215, 39%, 12%, 0.89);">
         <!-- Sidebar Controls -->
         <aside class="sidebar" role="complementary" aria-label="Controls">
-            <header class="header">
+            <!-- <header class="header">
                 <div class="header-branding">
                     <div class="brand-logo">
-                        <div class="logo-wrap" style="background-color:#0A2534;padding:6px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;">
-                            <img src="favicon.ico" alt="AIResQ ClimSols logo" class="logo-icon" width="40" height="40" style="display:block;">
+                        <div class="logo-wrap" style="padding:6px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;">
+                            <img src="airesq_dark.png" alt="AIResQ ClimSols logo" class="logo-icon" width="40" height="40" style="display:block;">
                         </div>
                         <div class="brand-text">
                             <h1 class="brand-name">AIResQ ClimSols</h1>
@@ -40,7 +41,7 @@
                         </div>
                     </div>
                 </div>
-            </header>
+            </header> -->
 
             <!-- Simulation Information Card -->
             <section class="section info-card-section">
@@ -140,7 +141,7 @@
                     <div class="control-group">
                         <label for="baseMapStyle">Base Map Style</label>
                         <select id="baseMapStyle" aria-label="Select base map style">
-                            <option value="openstreetmap">OpenStreetMap</option>
+                            <option value="openstreetmap">Google Map</option>
                             <!-- <option value="light">Light Map</option>
                             <option value="dark">Dark Map</option>
                             <option value="satellite">Satellite</option>
@@ -150,7 +151,7 @@
                     <div class="control-group">
                         <label for="floodLayerType">Flood Layer Type</label>
                         <select id="floodLayerType" aria-label="Select flood layer visualization type">
-                            <option value="multiclass" selected>Multiclass Depth</option>
+                            <option value="multiclass" selected>Multiclass</option>
                             <option value="binary">Binary</option>
                         </select>
                     </div>
@@ -167,7 +168,7 @@
                     <div class="control-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="toggleWardBoundaries" checked>
-                            <span>Ward Boundaries</span>
+                            <span>Boundaries</span>
                         </label>
                     </div>
                     <div class="control-group">
@@ -182,12 +183,13 @@
                             <span>Roadways</span>
                         </label>
                     </div>
-                    <div class="control-group">
+                    <!-- Hotspot Layer - Commented out but not removed -->
+                    <!-- <div class="control-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="toggleHotspots">
                             <span>Hotspots</span>
                         </label>
-                    </div>
+                    </div> -->
                     <div class="control-group">
                         <label class="toggle-label">
                             <input type="checkbox" id="togglePrecipGraph">
@@ -243,11 +245,11 @@
                         <dd class="stat-value" id="visibleFeatures">0</dd>
                     </div>
                     <div class="stat-item">
-                        <dt class="stat-label">Min Depth (visible):</dt>
+                        <dt class="stat-label">Min Depth (view):</dt>
                         <dd class="stat-value" id="minDepth">--</dd>
                     </div>
                     <div class="stat-item">
-                        <dt class="stat-label">Max Depth (visible):</dt>
+                        <dt class="stat-label">Max Depth (view):</dt>
                         <dd class="stat-value" id="maxDepth">--</dd>
                     </div>
                     <div class="stat-item">
@@ -302,32 +304,27 @@
             
             <!-- Flood Depth Legend -->
             <div class="map-overlay legend-overlay" id="legendOverlay" role="complementary" aria-label="Flood depth legend">
-                <h4 id="legendTitle">💧 Flood Depth Legend</h4>
+                <h4 id="legendTitle"></h4>
                 <div class="legend-items" id="legendItems">
                     <div class="legend-item">
                         <div class="legend-color" style="background: linear-gradient(to right, #f5fbff, #d6ecff);" aria-hidden="true"></div>
                         <span class="legend-label">0 - 0.2m</span>
-                        <span class="legend-severity minor">Minor</span>
                     </div>
                     <div class="legend-item">
                         <div class="legend-color" style="background: linear-gradient(to right, #d6ecff, #9dd1ff);" aria-hidden="true"></div>
                         <span class="legend-label">0.2 - 0.5m</span>
-                        <span class="legend-severity moderate">Moderate</span>
                     </div>
                     <div class="legend-item">
                         <div class="legend-color" style="background: linear-gradient(to right, #9dd1ff, #5aa8ff);" aria-hidden="true"></div>
                         <span class="legend-label">0.5 - 1m</span>
-                        <span class="legend-severity significant">Significant</span>
                     </div>
                     <div class="legend-item">
                         <div class="legend-color" style="background: linear-gradient(to right, #5aa8ff, #1e6ddf);" aria-hidden="true"></div>
                         <span class="legend-label">1 - 2m</span>
-                        <span class="legend-severity severe">Severe</span>
                     </div>
                     <div class="legend-item">
                         <div class="legend-color" style="background: linear-gradient(to right, #1e6ddf, #0b3a8c);" aria-hidden="true"></div>
                         <span class="legend-label">&gt; 2m</span>
-                        <span class="legend-severity extreme">Extreme</span>
                     </div>
                 </div>
             </div>

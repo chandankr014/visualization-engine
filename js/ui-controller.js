@@ -8,20 +8,18 @@ import { eventBus, AppEvents } from './event-bus.js';
 // Legend configurations
 const LEGEND_CONFIGS = {
     multiclass: {
-        title: '💧 Flood Depth Legend',
         items: [
-            { colors: ['#f5fbff', '#d6ecff'], label: '0 - 0.2m', severity: 'minor', severityLabel: 'Minor' },
-            { colors: ['#d6ecff', '#9dd1ff'], label: '0.2 - 0.5m', severity: 'moderate', severityLabel: 'Moderate' },
-            { colors: ['#9dd1ff', '#5aa8ff'], label: '0.5 - 1m', severity: 'significant', severityLabel: 'Significant' },
-            { colors: ['#5aa8ff', '#1e6ddf'], label: '1 - 2m', severity: 'severe', severityLabel: 'Severe' },
-            { colors: ['#1e6ddf', '#0b3a8c'], label: '> 2m', severity: 'extreme', severityLabel: 'Extreme' }
+            { colors: ['#f5fbff', '#d6ecff'], label: '0 - 0.2m', severity: '', severityLabel: '' },
+            { colors: ['#d6ecff', '#9dd1ff'], label: '0.2 - 0.5m', severity: '', severityLabel: '' },
+            { colors: ['#9dd1ff', '#5aa8ff'], label: '0.5 - 1m', severity: '', severityLabel: '' },
+            { colors: ['#5aa8ff', '#1e6ddf'], label: '1 - 2m', severity: '', severityLabel: '' },
+            { colors: ['#1e6ddf', '#0b3a8c'], label: '> 2m', severity: '', severityLabel: '' }
         ]
     },
     binary: {
-        title: '🌊 Binary Flood Classification',
         items: [
-            { color: '#10b981', label: 'Depth ≤ 1m', severity: 'safe', severityLabel: '' },
-            { color: '#ef4444', label: 'Depth > 1m', severity: 'flood', severityLabel: '' }
+            { color: '#10b981', label: 'Depth ≤ 1m', severity: '', severityLabel: '' },
+            { color: '#ef4444', label: 'Depth > 1m', severity: '', severityLabel: '' }
         ]
     }
 };
@@ -43,7 +41,7 @@ class UIController {
             toggleWardBoundaries: document.getElementById('toggleWardBoundaries'),
             toggleFloodDepth: document.getElementById('toggleFloodDepth'),
             toggleRoadways: document.getElementById('toggleRoadways'),
-            toggleHotspots: document.getElementById('toggleHotspots'),
+            // toggleHotspots: document.getElementById('toggleHotspots'),  // Commented out
             togglePrecipGraph: document.getElementById('togglePrecipGraph'),
             lulcDropdown: document.getElementById('lulcDropdown'),
             lulcDropdownBtn: document.getElementById('lulcDropdownBtn'),
@@ -84,7 +82,7 @@ class UIController {
      */
     _setupEventListeners() {
         const { opacitySlider, baseMapStyle, floodLayerType, 
-                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, toggleHotspots, togglePrecipGraph,
+                toggleWardBoundaries, toggleFloodDepth, toggleRoadways, /* toggleHotspots, */ togglePrecipGraph,
                 lulcDropdown, lulcDropdownBtn, lulcSelectAll, lulcClassToggles } = this.elements;
         
         // Opacity slider with debounce
@@ -122,9 +120,10 @@ class UIController {
             eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'roadways', visible: e.target.checked });
         });
 
-        toggleHotspots?.addEventListener('change', (e) => {
-            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'hotspots', visible: e.target.checked });
-        });
+        // Hotspot layer toggle - Commented out
+        // toggleHotspots?.addEventListener('change', (e) => {
+        //     eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'hotspots', visible: e.target.checked });
+        // });
 
         togglePrecipGraph?.addEventListener('change', (e) => {
             eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'precipitation-graph', visible: e.target.checked });

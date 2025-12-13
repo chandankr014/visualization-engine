@@ -1,3 +1,12 @@
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Application secrets from environment
+GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY', '')
+
 LOCATION="GURUGRAM, HARYANA"
 START_TIME=202507130155
 END_TIME=202507140555

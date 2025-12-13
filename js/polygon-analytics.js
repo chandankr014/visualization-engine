@@ -23,6 +23,8 @@ class PolygonAnalytics {
         
         // Analysis data cache
         this.analysisCache = new Map();
+        this.precipitationData = new Map(); // Map of time -> precipitation (mm)
+        this.isAnalyzed = false; // Track if analysis has been done
         
         // Popup element
         this.popupPanel = null;
@@ -37,7 +39,7 @@ class PolygonAnalytics {
     /**
      * Initialize polygon analytics
      */
-    init() {
+    async init() {
         this.map = this.mapManager.getMap();
         if (!this.map) {
             this.logger.error('Map not available for polygon analytics');
@@ -48,7 +50,30 @@ class PolygonAnalytics {
         this._createPopupPanel();
         this._setupEventListeners();
         
+        // Load precipitation data
+        await this._loadPrecipitationData();
+        
         this.logger.success('Polygon analytics initialized');
+    }
+
+    /**
+     * Load precipitation data from server
+     */
+    async _loadPrecipitationData() {
+        try {
+            const response = await apiBridge.getPrecipitation();
+            if (response.success && response.data) {
+                // Store precipitation data: convert meters to millimeters
+                response.data.forEach(item => {
+                    const timeKey = item.time;
+                    const precipMm = item.tp * 1000; // Convert meters to mm
+                    this.precipitationData.set(timeKey, precipMm);
+                });
+                this.logger.success(`Loaded ${this.precipitationData.size} precipitation records`);
+            }
+        } catch (error) {
+            this.logger.warning('Failed to load precipitation data', error.message);
+        }
     }
 
     /**
@@ -124,9 +149,9 @@ class PolygonAnalytics {
                     <h4>Time Series Analysis</h4>
                     <div class="chart-legend">
                         <span class="legend-item depth-legend"><span class="legend-color"></span>Flood Depth (%)</span>
-                        <span class="legend-item precip-legend"><span class="legend-color"></span>Precipitation (cm)</span>
+                        <span class="legend-item precip-legend"><span class="legend-color"></span>Precipitation (mm)</span>
                     </div>
-                    <canvas id="timeSeriesChart" width="500" height="200"></canvas>
+                    <canvas id="timeSeriesChart" width="460" height="140"></canvas>
                 </div>
                 <div class="panel-actions">
                     <button class="action-btn clear-polygon-btn">🗑️ Clear Polygon</button>
@@ -466,10 +491,18 @@ class PolygonAnalytics {
         this.currentPolygon = null;
         this.drawingPoints = [];
         this.analysisCache.clear();
+        this.isAnalyzed = false; // Reset analysis flag
         
         const source = this.map.getSource('analysis-polygon');
         if (source) {
             source.setData({ type: 'FeatureCollection', features: [] });
+        }
+        
+        // Re-enable analyze button
+        const analyzeBtn = this.popupPanel?.querySelector('.analyze-all-btn');
+        if (analyzeBtn) {
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = '📈 Analyze All Times';
         }
         
         this.hidePanel();
@@ -744,6 +777,11 @@ class PolygonAnalytics {
             return;
         }
         
+        if (this.isAnalyzed) {
+            this.logger.info('Analysis already completed for this polygon');
+            return;
+        }
+        
         const timeSlots = this.timeController.getTimeSlots();
         if (timeSlots.length === 0) {
             this.logger.warning('No time slots available');
@@ -777,12 +815,15 @@ class PolygonAnalytics {
         for (const timeSlot of timeSlots) {
             const stats = this._calculateStatsForTimeSlot(intersectingFeatures, timeSlot);
             
+            // Extract time integer from timeSlot (format: D202507130155)
+            const timeInt = parseInt(timeSlot.substring(1));
+            const precipMm = this.precipitationData.get(timeInt) || 0;
+            
             timeSeriesData.push({
                 timeSlot,
                 label: this._formatTimeLabel(timeSlot),
                 ...stats,
-                // Simulated precipitation (would come from actual data)
-                precipitation: Math.random() * 5 + (stats.meanDepth * 2)
+                precipitation: precipMm // Real precipitation in mm
             });
         }
         
@@ -792,8 +833,9 @@ class PolygonAnalytics {
         // Draw chart
         this._drawTimeSeriesChart(timeSeriesData);
         
-        analyzeBtn.disabled = false;
-        analyzeBtn.textContent = '📈 Analyze All Times';
+        // Permanently disable button after first analysis
+        this.isAnalyzed = true;
+        analyzeBtn.textContent = '✓ Analysis Complete';
         
         eventBus.emit(AppEvents.POLYGON_TIMESERIES_COMPLETE, { data: timeSeriesData });
         this.logger.success('Time series analysis complete');
@@ -860,7 +902,7 @@ class PolygonAnalytics {
     }
 
     /**
-     * Draw time series chart
+     * Draw time series chart with flood depth and precipitation
      */
     _drawTimeSeriesChart(data) {
         const canvas = document.getElementById('timeSeriesChart');
@@ -869,48 +911,33 @@ class PolygonAnalytics {
         const ctx = canvas.getContext('2d');
         const width = canvas.width;
         const height = canvas.height;
-        const padding = { top: 20, right: 50, bottom: 40, left: 50 };
+        const padding = { top: 20, right: 50, bottom: 30, left: 50 };
         
         // Clear canvas
         ctx.clearRect(0, 0, width, height);
         
         if (data.length === 0) return;
         
-        // Calculate scales
+        // Calculate chart dimensions
         const chartWidth = width - padding.left - padding.right;
         const chartHeight = height - padding.top - padding.bottom;
         
-        const maxFloodPercent = Math.max(...data.map(d => d.floodPercent), 100);
-        const maxPrecip = Math.max(...data.map(d => d.precipitation), 10);
+        // Calculate max values for scaling
+        const maxFloodPercent = Math.max(...data.map(d => d.floodPercent), 10);
+        const maxPrecip = Math.max(...data.map(d => d.precipitation), 1);
         
+        // Scale functions
         const xScale = (i) => padding.left + (i / (data.length - 1)) * chartWidth;
         const yScaleFlood = (v) => padding.top + chartHeight - (v / maxFloodPercent) * chartHeight;
         const yScalePrecip = (v) => padding.top + chartHeight - (v / maxPrecip) * chartHeight;
         
-        // Draw axes
-        ctx.strokeStyle = '#94a3b8';
-        ctx.lineWidth = 1;
-        
-        // X axis
-        ctx.beginPath();
-        ctx.moveTo(padding.left, padding.top + chartHeight);
-        ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
-        ctx.stroke();
-        
-        // Y axis left
-        ctx.beginPath();
-        ctx.moveTo(padding.left, padding.top);
-        ctx.lineTo(padding.left, padding.top + chartHeight);
-        ctx.stroke();
-        
-        // Y axis right
-        ctx.beginPath();
-        ctx.moveTo(padding.left + chartWidth, padding.top);
-        ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
-        ctx.stroke();
+        // Draw background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
         
         // Draw grid lines
         ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 1;
         ctx.setLineDash([2, 2]);
         for (let i = 0; i <= 5; i++) {
             const y = padding.top + (i / 5) * chartHeight;
@@ -921,19 +948,29 @@ class PolygonAnalytics {
         }
         ctx.setLineDash([]);
         
-        // Draw flood percent line (blue)
-        ctx.strokeStyle = '#3b82f6';
+        // Draw axes
+        ctx.strokeStyle = '#64748b';
         ctx.lineWidth = 2;
+        
+        // X axis
         ctx.beginPath();
-        data.forEach((d, i) => {
-            const x = xScale(i);
-            const y = yScaleFlood(d.floodPercent);
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        });
+        ctx.moveTo(padding.left, padding.top + chartHeight);
+        ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
         ctx.stroke();
         
-        // Draw precipitation line (orange)
+        // Y axis left (Flood %)
+        ctx.beginPath();
+        ctx.moveTo(padding.left, padding.top);
+        ctx.lineTo(padding.left, padding.top + chartHeight);
+        ctx.stroke();
+        
+        // Y axis right (Precipitation mm)
+        ctx.beginPath();
+        ctx.moveTo(padding.left + chartWidth, padding.top);
+        ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+        ctx.stroke();
+        
+        // Draw precipitation line (orange, thinner)
         ctx.strokeStyle = '#f59e0b';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -945,51 +982,87 @@ class PolygonAnalytics {
         });
         ctx.stroke();
         
+        // Draw flood percent line (blue, on top)
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        data.forEach((d, i) => {
+            const x = xScale(i);
+            const y = yScaleFlood(d.floodPercent);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        
         // Draw data points
         data.forEach((d, i) => {
             const x = xScale(i);
             
-            // Flood point
+            // Precipitation points
+            ctx.fillStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.arc(x, yScalePrecip(d.precipitation), 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Flood points
             ctx.fillStyle = '#3b82f6';
             ctx.beginPath();
             ctx.arc(x, yScaleFlood(d.floodPercent), 4, 0, Math.PI * 2);
             ctx.fill();
-            
-            // Precip point
-            ctx.fillStyle = '#f59e0b';
-            ctx.beginPath();
-            ctx.arc(x, yScalePrecip(d.precipitation), 4, 0, Math.PI * 2);
-            ctx.fill();
         });
         
         // Draw labels
-        ctx.fillStyle = '#64748b';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
+        ctx.fillStyle = '#475569';
+        ctx.font = '9px sans-serif';
         
-        // X axis labels
-        const labelStep = Math.ceil(data.length / 5);
+        // X axis labels (reduced for smaller chart)
+        ctx.textAlign = 'center';
+        const labelStep = Math.max(1, Math.ceil(data.length / 5));
         data.forEach((d, i) => {
             if (i % labelStep === 0 || i === data.length - 1) {
-                ctx.fillText(d.label, xScale(i), padding.top + chartHeight + 15);
+                // Simplify label for small space
+                const shortLabel = d.label.split(' ')[1] || d.label; // Just time part
+                ctx.fillText(shortLabel, xScale(i), padding.top + chartHeight + 12);
             }
         });
         
         // Y axis labels (left - flood %)
         ctx.textAlign = 'right';
-        for (let i = 0; i <= 5; i++) {
-            const value = (maxFloodPercent * (5 - i) / 5).toFixed(0);
-            const y = padding.top + (i / 5) * chartHeight;
-            ctx.fillText(value + '%', padding.left - 5, y + 4);
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillStyle = '#3b82f6';
+        for (let i = 0; i <= 4; i++) {
+            const value = (maxFloodPercent * (4 - i) / 4).toFixed(1);
+            ctx.fillText(value + '%', padding.left - 5, padding.top + (i / 4) * chartHeight + 3);
         }
         
-        // Y axis labels (right - precipitation)
+        // Y axis labels (right - precipitation mm)
         ctx.textAlign = 'left';
-        for (let i = 0; i <= 5; i++) {
-            const value = (maxPrecip * (5 - i) / 5).toFixed(1);
-            const y = padding.top + (i / 5) * chartHeight;
-            ctx.fillText(value + 'cm', padding.left + chartWidth + 5, y + 4);
+        ctx.fillStyle = '#f59e0b';
+        for (let i = 0; i <= 4; i++) {
+            const value = (maxPrecip * (4 - i) / 4).toFixed(1);
+            ctx.fillText(value, padding.left + chartWidth + 5, padding.top + (i / 4) * chartHeight + 3);
         }
+        
+        // Draw compact axis titles
+        ctx.font = 'bold 9px sans-serif';
+        
+        // Left Y axis title
+        ctx.save();
+        ctx.fillStyle = '#3b82f6';
+        ctx.translate(12, padding.top + chartHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText('Flood %', 0, 0);
+        ctx.restore();
+        
+        // Right Y axis title
+        ctx.save();
+        ctx.fillStyle = '#f59e0b';
+        ctx.translate(width - 12, padding.top + chartHeight / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.textAlign = 'center';
+        ctx.fillText('Precip (mm)', 0, 0);
+        ctx.restore();
     }
 
     /**

@@ -34,7 +34,7 @@ const DEFAULT_CONFIG = {
  */
 class PMTilesViewerApp {
     constructor() {
-        this.version = '2.1.0';
+        this.version = '1.0';
         this.config = { ...DEFAULT_CONFIG };
         this.modules = {};
         this.isInitialized = false;
@@ -52,7 +52,9 @@ class PMTilesViewerApp {
                 minLevel: 'info'
             });
             
-            this.modules.logger.info('PMTiles Viewer v' + this.version);
+            this.modules.logger.info('AIResQ ClimSols Flood Viz-Engine');
+            this.modules.logger.info(' >> Developed by: Chandan Kumar << ');
+            this.modules.logger.info('___________________________________')
             this.modules.logger.info('Initializing application...');
             
             // Load configuration from server
@@ -289,18 +291,20 @@ class PMTilesViewerApp {
                     }
                 } else if (layer === 'roadways') {
                     await mapManager.toggleRoadways(visible);
-                } else if (layer === 'hotspots') {
-                    if (visible) {
-                        await mapManager.loadHotspots();
-                        await mapManager.addHotspots();
-                    } else {
-                        if (mapManager.map.getLayer('hotspots-circle')) {
-                            mapManager.map.setLayoutProperty('hotspots-circle', 'visibility', 'none');
-                        }
-                        if (mapManager.map.getLayer('hotspots-label')) {
-                            mapManager.map.setLayoutProperty('hotspots-label', 'visibility', 'none');
-                        }
-                    }
+                // Hotspot layer toggle - Commented out but not removed
+                // } else if (layer === 'hotspots') {
+                //     if (visible) {
+                //         await mapManager.loadHotspots();
+                //         await mapManager.addHotspots();
+                //     } else {
+                //         if (mapManager.map.getLayer('hotspots-circle')) {
+                //             mapManager.map.setLayoutProperty('hotspots-circle', 'visibility', 'none');
+                //         }
+                //         if (mapManager.map.getLayer('hotspots-label')) {
+                //             mapManager.map.setLayoutProperty('hotspots-label', 'visibility', 'none');
+                //         }
+                //     }
+                // }
                 }
             }
         });
@@ -394,7 +398,7 @@ class PMTilesViewerApp {
                 
                 // Initialize Polygon Analytics after map is fully loaded
                 this.modules.polygonAnalytics = new PolygonAnalytics(mapManager, timeController, logger);
-                this.modules.polygonAnalytics.init();
+                await this.modules.polygonAnalytics.init();
                 
                 resolve();
             });

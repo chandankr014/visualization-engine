@@ -39,6 +39,7 @@ class MapManager {
         this.wardBoundariesData = null;
         this.staticLayers = new Map(); // Track loaded static layers
         this.hotspotsData = null; // Hotspots data
+        this.googleMapsApiKey = config.googleMapsApiKey || ''; // Google Maps API Key from config
         
         // Batch-based PMTiles configuration
         this.batchConfig = {
@@ -64,14 +65,25 @@ class MapManager {
             preloadedSources: new Map() // batchFile -> { loaded, sourceId }
         };
         
-        // Base map styles
-        this.baseStyles = {
-            light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-            dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
-            openstreetmap: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
-            satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`,
-            topo: `https://api.maptiler.com/maps/topo/style.json?key=${MAPTILER_KEY}`,
-        };
+        // Base map styles - Use Google Maps if API key is available
+        if (this.googleMapsApiKey) {
+            this.baseStyles = {
+                light: this._createGoogleMapsStyle('roadmap'),
+                dark: this._createGoogleMapsStyle('dark'),
+                openstreetmap: this._createGoogleMapsStyle('roadmap'),
+                satellite: this._createGoogleMapsStyle('satellite'),
+                topo: this._createGoogleMapsStyle('terrain'),
+            };
+        } else {
+            // Fallback to other basemaps if no Google Maps API key
+            this.baseStyles = {
+                light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+                openstreetmap: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+                satellite: `https://api.maptiler.com/maps/hybrid/style.json?key=${MAPTILER_KEY}`,
+                topo: `https://api.maptiler.com/maps/topo/style.json?key=${MAPTILER_KEY}`,
+            };
+        }
 
         // Property name for geo_code (unique identifier for each cell)
         this.geoCodeProperty = 'geo_code';
@@ -79,6 +91,63 @@ class MapManager {
         // Throttled functions
         this._throttledMouseMove = throttle(this._handleMouseMove.bind(this), 100);
         this._throttledUpdateStats = throttle(this._updateStatsInternal.bind(this), 2000);
+    }
+
+    /**
+     * Create Google Maps style configuration for MapLibre
+     * @param {string} mapType - Google Maps type: roadmap, satellite, hybrid, terrain, dark
+     */
+    _createGoogleMapsStyle(mapType = 'roadmap') {
+        const styleMap = {
+            'roadmap': 'roadmap',
+            'satellite': 'satellite',
+            'hybrid': 'hybrid',
+            'terrain': 'terrain',
+            'dark': 'dark'
+        };
+        
+        const selectedStyle = styleMap[mapType] || 'roadmap';
+        
+        return {
+            version: 8,
+            name: `Google Maps - ${selectedStyle}`,
+            sources: {
+                'google-maps': {
+                    type: 'raster',
+                    tiles: [
+                        `https://mt0.google.com/vt/lyrs=${this._getGoogleMapsLayerParam(selectedStyle)}&x={x}&y={y}&z={z}&key=${this.googleMapsApiKey}`,
+                        `https://mt1.google.com/vt/lyrs=${this._getGoogleMapsLayerParam(selectedStyle)}&x={x}&y={y}&z={z}&key=${this.googleMapsApiKey}`,
+                        `https://mt2.google.com/vt/lyrs=${this._getGoogleMapsLayerParam(selectedStyle)}&x={x}&y={y}&z={z}&key=${this.googleMapsApiKey}`,
+                        `https://mt3.google.com/vt/lyrs=${this._getGoogleMapsLayerParam(selectedStyle)}&x={x}&y={y}&z={z}&key=${this.googleMapsApiKey}`
+                    ],
+                    tileSize: 256,
+                    attribution: '&copy; Google Maps'
+                }
+            },
+            layers: [
+                {
+                    id: 'google-maps-layer',
+                    type: 'raster',
+                    source: 'google-maps',
+                    minzoom: 0,
+                    maxzoom: 22
+                }
+            ]
+        };
+    }
+
+    /**
+     * Get Google Maps layer parameter based on style type
+     */
+    _getGoogleMapsLayerParam(styleType) {
+        const params = {
+            'roadmap': 'm',      // Standard roadmap
+            'satellite': 's',    // Satellite only
+            'hybrid': 'y',       // Satellite with labels
+            'terrain': 'p',      // Terrain
+            'dark': 'r'          // Dark mode (roadmap with dark styling)
+        };
+        return params[styleType] || 'm';
     }
 
     init() {
@@ -205,92 +274,94 @@ class MapManager {
         }
     }
 
-    async loadHotspots() {
-        if (this.hotspotsData) {
-            this.logger.info('Hotspots already loaded');
-            return true;
-        }
+    // Hotspot layer loading - Commented out but not removed
+    // async loadHotspots() {
+    //     if (this.hotspotsData) {
+    //         this.logger.info('Hotspots already loaded');
+    //         return true;
+    //     }
 
-        try {
-            this.logger.info('Loading hotspots...');
-            const response = await apiBridge.getHotspots();
-            
-            if (!response.success || !response.data) {
-                throw new Error('Failed to load hotspots');
-            }
+    //     try {
+    //         this.logger.info('Loading hotspots...');
+    //         const response = await apiBridge.getHotspots();
+    //         
+    //         if (!response.success || !response.data) {
+    //             throw new Error('Failed to load hotspots');
+    //         }
 
-            this.hotspotsData = response.data;
-            this.logger.success('Hotspots loaded');
-            return true;
-        } catch (error) {
-            this.logger.error('Failed to load hotspots', error.message);
-            return false;
-        }
-    }
+    //         this.hotspotsData = response.data;
+    //         this.logger.success('Hotspots loaded');
+    //         return true;
+    //     } catch (error) {
+    //         this.logger.error('Failed to load hotspots', error.message);
+    //         return false;
+    //     }
+    // }
 
-    async addHotspots() {
-        if (!this.map || !this.hotspotsData) {
-            this.logger.error('Map or hotspots not ready');
-            return false;
-        }
+    // Hotspot layer rendering - Commented out but not removed
+    // async addHotspots() {
+    //     if (!this.map || !this.hotspotsData) {
+    //         this.logger.error('Map or hotspots not ready');
+    //         return false;
+    //     }
 
-        try {
-            // Remove existing hotspot layers if present
-            if (this.map.getLayer('hotspots-circle')) {
-                this.map.removeLayer('hotspots-circle');
-            }
-            if (this.map.getLayer('hotspots-label')) {
-                this.map.removeLayer('hotspots-label');
-            }
-            if (this.map.getSource('hotspots')) {
-                this.map.removeSource('hotspots');
-            }
+    //     try {
+    //         // Remove existing hotspot layers if present
+    //         if (this.map.getLayer('hotspots-circle')) {
+    //             this.map.removeLayer('hotspots-circle');
+    //         }
+    //         if (this.map.getLayer('hotspots-label')) {
+    //             this.map.removeLayer('hotspots-label');
+    //         }
+    //         if (this.map.getSource('hotspots')) {
+    //             this.map.removeSource('hotspots');
+    //         }
 
-            // Add source
-            this.map.addSource('hotspots', {
-                type: 'geojson',
-                data: this.hotspotsData
-            });
+    //         // Add source
+    //         this.map.addSource('hotspots', {
+    //             type: 'geojson',
+    //             data: this.hotspotsData
+    //         });
 
-            // Add circle layer for hotspot markers
-            this.map.addLayer({
-                id: 'hotspots-circle',
-                type: 'circle',
-                source: 'hotspots',
-                paint: {
-                    'circle-radius': 8,
-                    'circle-color': '#dc2626',
-                    'circle-stroke-width': 2,
-                    'circle-stroke-color': '#ffffff',
-                    'circle-opacity': 0.9
-                }
-            });
+    //         // Add circle layer for hotspot markers
+    //         this.map.addLayer({
+    //             id: 'hotspots-circle',
+    //             type: 'circle',
+    //             source: 'hotspots',
+    //             paint: {
+    //                 'circle-radius': 8,
+    //                 'circle-color': '#dc2626',
+    //                 'circle-stroke-width': 2,
+    //                 'circle-stroke-color': '#ffffff',
+    //                 'circle-opacity': 0.9
+    //             }
+    //         });
 
-            // Add label layer for hotspot names
-            this.map.addLayer({
-                id: 'hotspots-label',
-                type: 'symbol',
-                source: 'hotspots',
-                layout: {
-                    'text-field': ['get', 'Points'],
-                    'text-size': 11,
-                    'text-offset': [0, 1.5],
-                    'text-anchor': 'top'
-                },
-                paint: {
-                    'text-color': '#1f2937',
-                    'text-halo-color': '#ffffff',
-                    'text-halo-width': 1.5
-                }
-            });
+    //         // Add label layer for hotspot names
+    //         this.map.addLayer({
+    //             id: 'hotspots-label',
+    //             type: 'symbol',
+    //             source: 'hotspots',
+    //             layout: {
+    //                 'text-field': ['get', 'Points'],
+    //                 'text-size': 11,
+    //                 'text-offset': [0, 1.5],
+    //                 'text-anchor': 'top'
+    //             },
+    //             paint: {
+    //                 'text-color': '#1f2937',
+    //                 'text-halo-color': '#ffffff',
+    //                 'text-halo-width': 1.5
+    //             }
+    //         });
 
-            this.logger.success('Hotspots added');
-            return true;
-        } catch (error) {
-            this.logger.error('Failed to add hotspots', error.message);
-            return false;
-        }
-    }
+    //         this.logger.success('Hotspots added');
+    //         return true;
+    //     } catch (error) {
+    //         this.logger.error('Failed to add hotspots', error.message);
+    //         return false;
+    //     }
+    // }
 
     async toggleStaticLayer(layerId, visible) {
         if (!this.map) return false;
@@ -1298,7 +1369,7 @@ class MapManager {
         if (depth >= 1) return { color: '#1e6ddf', label: 'Severe', textColor: '#ffffff' };
         if (depth >= 0.5) return { color: '#5aa8ff', label: 'Significant', textColor: '#0f172a' };
         if (depth >= 0.2) return { color: '#9dd1ff', label: 'Moderate', textColor: '#0f172a' };
-        return { color: '#f5fbff', label: 'Minor', textColor: '#0f172a' };
+        return { color: '#f5fbff', label: 'Low', textColor: '#0f172a' };
     }
 
     _setupCursorInteractions() {

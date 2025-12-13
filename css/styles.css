@@ -5,53 +5,82 @@
 
 /* CSS Variables for easy theming */
 :root {
-    /* Primary Color Palette - Professional Blue Gradient */
-    --color-primary: #2563eb;
-    --color-primary-dark: #1e40af;
+    /* --- BRANDING & ACTIONS --- */
+    /* Primary: A deep, authoritative blue (GovTech style) instead of neon blue */
+    --color-primary: #155cb4;       
+    --color-primary-dark: #0f4486;
     --color-primary-light: #3b82f6;
-    --color-secondary: #0ea5e9;
-    --color-secondary-dark: #0284c7;
-    --color-accent: #8b5cf6;
-    --color-success: #10b981;
-    --color-warning: #f59e0b;
-    --color-error: #ef4444;
+
+    /* Secondary: Teal-based, useful for 'safe' water levels or info */
+    --color-secondary: #0891b2;     
+    --color-secondary-dark: #0e7490;
+
+    /* Accent: Purple is kept but desaturated slightly for professionalism */
+    --color-accent: #7c3aed;
+
+    /* --- SEMANTIC STATES (High Visibility) --- */
+    /* Success: Emerald (distinct from map blues) */
+    --color-success: #059669;
+    /* Warning: Amber (standard ISO warning color) */
+    --color-warning: #d97706;
+    /* Error: Rose (high alert, distinct from blue water) */
+    --color-error: #e11d48;
+
+    /* --- THEME STRUCTURE --- */
+    /* Header: FIXED as requested */
+    --color-header: hsla(215, 39%, 12%, 0.89);
     
-    /* Neutrals with better contrast */
-    --color-bg-dark: #0f172a;
+    /* Sidebar: Changed from blue (#d0e4ff) to White. 
+       This prevents the sidebar from looking like "water" */
+    --color-sidebar: #ffffff;
+    
+    /* Background: Cool Gray/Slate. Provides depth behind the white sidebar */
+    --color-background: #f1f5f9;
+
+    /* --- NEUTRALS & TYPOGRAPHY --- */
+    /* Matches the header hue for dark mode elements */
+    --color-bg-dark: hsla(215, 39%, 12%, 0.89);
     --color-bg-light: #f8fafc;
-    --color-text-primary: #1e293b;
-    --color-text-secondary: #64748b;
-    --color-text-muted: #94a3b8;
-    --color-border: #e2e8f0;
-    --color-border-light: #f1f5f9;
     
-    /* Spacing */
-    --spacing-xs: 6px;
-    --spacing-sm: 10px;
+    /* Text: Slate scale (easier on eyes than pure black) */
+    --color-text-primary: #0f172a;   /* Darkest Slate */
+    --color-text-secondary: #475569; /* Medium Slate */
+    --color-text-muted: #94a3b8;     /* Light Slate */
+
+    /* Borders: Subtle separation */
+    --color-border: #e2e8f0;
+    --color-border-light: #f8fafc;
+
+    /* --- SPACING & LAYOUT --- */
+    --spacing-xs: 4px;   /* Tightened for data density */
+    --spacing-sm: 8px;
     --spacing-md: 16px;
     --spacing-lg: 24px;
     --spacing-xl: 32px;
-    
-    /* Border radius */
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 14px;
-    --radius-xl: 18px;
-    
-    /* Enhanced Shadows */
-    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
-    --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.15);
-    --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.25);
-    
-    /* Transitions */
-    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    
-    /* Sidebar width */
     --sidebar-width: 340px;
+
+    /* --- UI SHAPE --- */
+    --radius-sm: 2px;
+    --radius-md: 3px;
+    --radius-lg: 4px;
+    --radius-xl: 6px;
+
+    /* --- DEPTH (Refined for GIS Layers) --- */
+    /* Shadow SM: Subtle card definition */
+    --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+    /* Shadow MD: Dropdowns/Tooltips */
+    --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.1), 0 2px 4px -1px rgba(15, 23, 42, 0.06);
+    /* Shadow LG: Modals/Floating Panels */
+    --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
+    /* Shadow XL: Heavy elevation */
+    --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
+
+    /* --- ANIMATIONS --- */
+    --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
 
 /* Reset and Base Styles */
 *, *::before, *::after {
@@ -67,7 +96,7 @@ html {
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #1e40af 100%);
+    background: var(--color-background);
     height: 100vh;
     overflow: hidden;
     color: var(--color-text-primary);
@@ -94,12 +123,12 @@ body {
 .sidebar {
     width: var(--sidebar-width);
     min-width: 320px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+    background: var(--color-sidebar);
     backdrop-filter: blur(20px) saturate(180%);
     border-radius: var(--radius-xl);
     padding: var(--spacing-md);
     box-shadow: var(--shadow-xl);
-    border: 1px solid rgba(255, 255, 255, 0.6);
+    border: 1.5px solid rgb(230, 230, 230);
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
@@ -112,8 +141,13 @@ body {
 /* Header */
 .header {
     margin-bottom: var(--spacing-sm);
-    padding-bottom: var(--spacing-sm);
-    border-bottom: 1px solid var(--color-border-light);
+    padding: var(--spacing-md);
+    margin: calc(-1 * var(--spacing-md));
+    margin-bottom: var(--spacing-sm);
+    /* background: var(--color-header); */
+    background: #0A2534;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .header-branding {
@@ -141,14 +175,11 @@ body {
     margin-bottom: 2px;
     font-weight: 700;
     letter-spacing: -0.3px;
-    background: linear-gradient(135deg, #2563eb 0%, #0ea5e9 50%, #8b5cf6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: #ffffff;
 }
 
 .brand-tagline {
-    color: var(--color-text-secondary);
+    color: rgba(255, 255, 255, 0.8);
     font-size: 0.75rem;
     line-height: 1.4;
     font-weight: 500;
@@ -911,28 +942,30 @@ select:focus {
 
 /* Flood Depth Legend */
 .legend-overlay {
-    bottom: var(--spacing-lg);
-    top: auto;
+    top: var(--spacing-lg);
     right: var(--spacing-lg);
-    max-width: 220px;
+    bottom: auto;
+    max-width: none;
+    background: rgba(210, 210, 210, 0.01);
 }
 
 .legend-items {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
+    /* gap: var(--spacing-md); */
+    flex-wrap: wrap;
 }
 
 .legend-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: var(--spacing-xs);
     font-size: 0.75rem;
 }
 
 .legend-color {
-    width: 24px;
-    height: 14px;
+    width: 28px;
+    height: 16px;
     border-radius: 3px;
     border: 1px solid rgba(255, 255, 255, 0.15);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
@@ -940,9 +973,11 @@ select:focus {
 }
 
 .legend-label {
-    color: #ffffff;
-    min-width: 70px;
+    font-weight: 600;
+    color: #071427;
+    min-width: auto;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 .legend-severity {
@@ -955,7 +990,7 @@ select:focus {
     margin-left: auto;
 }
 
-.legend-severity.minor {
+.legend-severity.Low {
     background: #e0f2ff;
     color: var(--color-text-primary);
 }
@@ -1200,14 +1235,14 @@ select:focus {
     position: absolute;
     top: var(--spacing-lg);
     left: var(--spacing-lg);
-    width: 420px;
-    max-height: calc(100vh - 80px);
+    width: 500px;
+    height: 250px;
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(12px);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     z-index: 100;
-    overflow: hidden;
+    overflow-y: auto;
     animation: panelSlideIn 0.3s ease-out;
 }
 
@@ -1258,38 +1293,38 @@ select:focus {
 }
 
 .panel-content {
-    padding: var(--spacing-lg);
+    padding: var(--spacing-sm) var(--spacing-md);
     overflow-y: auto;
-    max-height: calc(100vh - 180px);
+    height: calc(100% - 48px);
 }
 
 /* Area Statistics */
 .area-stats {
     display: flex;
-    gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-lg);
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
 }
 
 .area-stat-item {
     flex: 1;
     background: var(--color-bg-light);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
     text-align: center;
 }
 
 .area-stat-item .stat-label {
     display: block;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: var(--spacing-xs);
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
 }
 
 .area-stat-item .stat-value {
     display: block;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-weight: 700;
     color: var(--color-text-primary);
 }
@@ -1297,14 +1332,14 @@ select:focus {
 /* Depth Statistics Boxes */
 .depth-stats {
     display: flex;
-    gap: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-sm);
 }
 
 .depth-stat-box {
     flex: 1;
-    padding: var(--spacing-md);
-    border-radius: var(--radius-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
     text-align: center;
     position: relative;
     overflow: hidden;
@@ -1345,16 +1380,16 @@ select:focus {
 
 .depth-stat-box .depth-label {
     display: block;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: var(--spacing-xs);
+    letter-spacing: 0.3px;
+    margin-bottom: 2px;
 }
 
 .depth-stat-box .depth-value {
     display: block;
-    font-size: 1.5rem;
+    font-size: 1.1rem;
     font-weight: 700;
     color: var(--color-text-primary);
     line-height: 1.2;
@@ -1362,43 +1397,43 @@ select:focus {
 
 .depth-stat-box .depth-unit {
     display: block;
-    font-size: 0.75rem;
+    font-size: 0.65rem;
     color: var(--color-text-secondary);
 }
 
 /* Chart Container */
 .chart-container {
     background: var(--color-bg-light);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    margin-bottom: var(--spacing-lg);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
 }
 
 .chart-container h4 {
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--color-text-primary);
-    margin: 0 0 var(--spacing-sm) 0;
+    margin: 0 0 var(--spacing-xs) 0;
 }
 
 .chart-legend {
     display: flex;
     justify-content: center;
-    gap: var(--spacing-lg);
-    margin-bottom: var(--spacing-md);
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-xs);
 }
 
-.legend-item {
+.chart-legend .legend-item {
     display: flex;
     align-items: center;
-    gap: var(--spacing-xs);
-    font-size: 0.75rem;
+    gap: 4px;
+    font-size: 0.7rem;
     color: var(--color-text-secondary);
 }
 
-.legend-item .legend-color {
-    width: 12px;
-    height: 12px;
+.chart-legend .legend-item .legend-color {
+    width: 10px;
+    height: 10px;
     border-radius: 2px;
 }
 
@@ -1412,9 +1447,9 @@ select:focus {
 
 #timeSeriesChart {
     width: 100%;
-    height: 200px;
     background: white;
     border-radius: var(--radius-sm);
+    display: block;
 }
 
 /* Panel Actions */
