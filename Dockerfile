@@ -11,6 +11,12 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
+# Copy only requirements first (for better caching)
+COPY requirements.txt .
+
+# Install Python deps (if you have none, comment this line)
+RUN pip install --no-cache-dir -r requirements.txt || true
+
 # Copy the full application
 COPY . .
 
