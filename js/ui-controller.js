@@ -151,6 +151,18 @@ class UIController {
             this._updateLulcSelection();
         });
 
+        // Listen for layer toggle events to sync checkbox states
+        eventBus.on(AppEvents.LAYER_TOGGLE, ({ layer, visible }) => {
+            switch (layer) {
+                case 'precipitation-graph':
+                    if (togglePrecipGraph) {
+                        togglePrecipGraph.checked = visible;
+                    }
+                    break;
+                // Add other layer checkboxes here as needed
+            }
+        });
+
         // LULC class toggles
         lulcClassToggles?.forEach(checkbox => {
             checkbox.addEventListener('change', () => {

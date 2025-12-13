@@ -58,12 +58,14 @@ class PrecipitationGraph {
         this.container.id = 'precipitationGraphContainer';
         this.container.className = 'precipitation-graph-container';
         this.container.style.cssText = `
-            position: fixed;
+            position: absolute;
             bottom: 20px;
-            left: 20px;
-            width: 45vw;
-            max-width: 600px;
-            min-width: 400px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: calc(100% - 40px);
+            max-width: calc(100% - 40px);
+            height: 250px;
+            overflow: auto;
             background: rgba(255, 255, 255, 1);
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -90,9 +92,38 @@ class PrecipitationGraph {
                 <span style="font-size: 16px;">🌧️</span>
                 <span style="font-size: 13px; font-weight: 600; color: #1e3a8a;">Precipitation</span>
             </div>
-            <span id="precipCurrentValue" style="font-size: 12px; color: #6b7280; font-family: monospace;">--</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span id="precipCurrentValue" style="font-size: 12px; color: #6b7280; font-family: monospace;">--</span>
+                <button id="precipCloseBtn" style="
+                    background: transparent;
+                    border: none;
+                    color: #6b7280;
+                    font-size: 18px;
+                    cursor: pointer;
+                    padding: 4px 8px;
+                    line-height: 1;
+                    border-radius: 2px;
+                    transition: all 0.2s ease;
+                " title="Close">✕</button>
+            </div>
         `;
         this.container.appendChild(header);
+        
+        // Add hover effects to close button
+        const closeBtn = header.querySelector('#precipCloseBtn');
+        closeBtn.addEventListener('mouseenter', () => {
+            closeBtn.style.background = '#f3f4f6';
+            closeBtn.style.color = '#ef4444';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            closeBtn.style.background = 'transparent';
+            closeBtn.style.color = '#6b7280';
+        });
+        closeBtn.addEventListener('click', () => {
+            this.hide();
+            // Emit event to sync with layer toggle checkbox
+            eventBus.emit(AppEvents.LAYER_TOGGLE, { layer: 'precipitation-graph', visible: false });
+        });
 
         // Create canvas wrapper for responsive sizing
         const canvasWrapper = document.createElement('div');
@@ -161,8 +192,18 @@ class PrecipitationGraph {
         `;
         this.container.appendChild(timeLabels);
 
-        // Add to DOM
-        document.body.appendChild(this.container);
+        // Add to DOM - append to map container instead of body
+        const mapContainer = document.querySelector('.map-wrapper') || document.getElementById('map');
+        if (mapContainer) {
+            // Ensure map container has relative positioning
+            if (mapContainer.style.position !== 'relative' && mapContainer.style.position !== 'absolute') {
+                mapContainer.style.position = 'relative';
+            }
+            mapContainer.appendChild(this.container);
+        } else {
+            // Fallback to body if map container not found
+            document.body.appendChild(this.container);
+        }
 
         // Setup canvas context
         this.ctx = this.canvas.getContext('2d');
@@ -575,13 +616,13 @@ class PrecipitationGraph {
         
         this.container.style.display = 'block';
         this.container.style.opacity = '0';
-        this.container.style.transform = 'translateY(20px)';
+        this.container.style.transform = 'translateX(-50%) translateY(20px)';
         
         // Trigger reflow
         this.container.offsetHeight;
         
         this.container.style.opacity = '1';
-        this.container.style.transform = 'translateY(0)';
+        this.container.style.transform = 'translateX(-50%) translateY(0)';
         
         this.isVisible = true;
         
@@ -604,7 +645,7 @@ class PrecipitationGraph {
         if (!this.isVisible) return;
         
         this.container.style.opacity = '0';
-        this.container.style.transform = 'translateY(20px)';
+        this.container.style.transform = 'translateX(-50%) translateY(20px)';
         
         setTimeout(() => {
             this.container.style.display = 'none';
