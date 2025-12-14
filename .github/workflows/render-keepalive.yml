@@ -1,0 +1,14 @@
+name: Keep App Awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (UTC)
+  workflow_dispatch:        # allows manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render App
+        run: |
+          curl -fsS https://visualization-engine.onrender.com > /dev/null
