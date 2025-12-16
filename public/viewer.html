@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AIResQ ClimSols - Advanced Flood Depth Visualization Engine">
+    <meta name="theme-color" content="#2563eb">
+    <title>AIResQ ClimSols | Flood Visualization Engine</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <!-- <link rel="icon" type="image/x-icon" href="airesq_dark.png"> -->
+    
+    <!-- Preconnect to CDNs for faster loading -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
+    <link rel="preconnect" href="https://basemaps.cartocdn.com" crossorigin>
+    
+    <!-- MapLibre GL JS -->
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    
+    <!-- PMTiles Protocol -->
+    <script src="https://unpkg.com/pmtiles@3.0.3/dist/pmtiles.js"></script>
+    
+    <!-- Application Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container" style="background-color: hsla(215, 39%, 12%, 0.89);">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar" role="complementary" aria-label="Controls">
+            <!-- <header class="header">
+                <div class="header-branding">
+                    <div class="brand-logo">
+                        <div class="logo-wrap" style="padding:6px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;">
+                            <img src="airesq_dark.png" alt="AIResQ ClimSols logo" class="logo-icon" width="40" height="40" style="display:block;">
+                        </div>
+                        <div class="brand-text">
+                            <h1 class="brand-name">AIResQ ClimSols</h1>
+                            <p class="brand-tagline">Flood Visualization Engine</p>
+                        </div>
+                    </div>
+                </div>
+            </header> -->
+
+            <!-- Simulation Information Card -->
+            <section class="section info-card-section">
+                <div class="info-card">
+                    <!-- <div class="info-card-header">
+                        <span class="info-icon">📍</span>
+                        <h4>Simulation Details</h4>
+                    </div> -->
+                    <div class="info-card-body">
+                        <div class="info-row">
+                            <span class="info-label">Location</span>
+                            <span class="info-value" id="infoLocation">Loading...</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Start Time</span>
+                            <span class="info-value" id="infoStartTime">--:--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">End Time</span>
+                            <span class="info-value" id="infoEndTime">--:--</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Interval</span>
+                            <span class="info-value" id="infoInterval">-- min</span>
+                        </div>
+                        <!-- <div class="info-row">
+                            <span class="info-label">Time Steps</span>
+                            <span class="info-value" id="infoTimeSteps">--</span>
+                        </div> -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Time Slider Section -->
+            <section class="section time-section" aria-labelledby="time-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">⏱️</span>
+                    <h3 id="time-section-title">Time Control</h3>
+                </div>
+                <div class="time-controls">
+                    <div class="time-info">
+                        <span class="time-label">Current Time</span>
+                        <span class="badge" id="currentTime" aria-live="polite">Loading...</span>
+                    </div>
+                    <div class="playback-controls">
+                        <button 
+                            id="playPauseBtn" 
+                            class="play-pause-btn" 
+                            aria-label="Play or pause time animation"
+                            aria-pressed="false"
+                        >
+                            ▶️ Play
+                        </button>
+                    </div>
+                    <div class="slider-container">
+                        <input 
+                            type="range" 
+                            id="timeSlider" 
+                            min="0" 
+                            max="10" 
+                            value="0" 
+                            step="1" 
+                            aria-label="Select time slot"
+                            aria-valuetext="Time slot 1"
+                        >
+                    </div>
+                    <div class="time-labels" aria-hidden="true">
+                        <span id="timeStart">--:--</span>
+                        <span id="timeEnd">--:--</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Visualization Controls -->
+            <section class="section control-section" aria-labelledby="control-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🎨</span>
+                    <h3 id="control-section-title">Visualization Controls</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <label for="opacitySlider">
+                            Opacity: <span id="opacityValue">100%</span>
+                        </label>
+                        <div class="slider-container">
+                            <input 
+                                type="range" 
+                                id="opacitySlider" 
+                                min="0" 
+                                max="100" 
+                                value="100" 
+                                aria-label="Layer opacity"
+                                aria-valuetext="100 percent"
+                            >
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label for="baseMapStyle">Base Map Style</label>
+                        <select id="baseMapStyle" aria-label="Select base map style">
+                            <option value="openstreetmap">Google Map</option>
+                            <!-- <option value="light">Light Map</option>
+                            <option value="dark">Dark Map</option>
+                            <option value="satellite">Satellite</option>
+                            <option value="topo">Topographic</option> -->
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="floodLayerType">Flood Layer Type</label>
+                        <select id="floodLayerType" aria-label="Select flood layer visualization type">
+                            <option value="multiclass" selected>Multiclass</option>
+                            <option value="binary">Binary</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Layer Controls -->
+            <section class="section control-section" aria-labelledby="layers-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🗺️</span>
+                    <h3 id="layers-section-title">Layers</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleWardBoundaries" checked>
+                            <span>Boundaries</span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleFloodDepth" checked>
+                            <span>Flood Depth</span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleRoadways">
+                            <span>Roadways</span>
+                        </label>
+                    </div>
+                    <!-- Hotspot Layer - Commented out but not removed -->
+                    <!-- <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="toggleHotspots">
+                            <span>Hotspots</span>
+                        </label>
+                    </div> -->
+                    <div class="control-group">
+                        <label class="toggle-label">
+                            <input type="checkbox" id="togglePrecipGraph">
+                            <span>Precipitation Graph</span>
+                        </label>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LULC Classes -->
+            <section class="section control-section" aria-labelledby="lulc-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">🌿</span>
+                    <h3 id="lulc-section-title">Land Use Classes</h3>
+                </div>
+                <div class="controls">
+                    <div class="control-group">
+                        <div class="dropdown-multiselect" id="lulcDropdown">
+                            <button type="button" class="dropdown-toggle" id="lulcDropdownBtn">
+                                <span>Select Land Use Classes</span>
+                                <span class="dropdown-arrow">▼</span>
+                            </button>
+                            <div class="dropdown-menu" id="lulcDropdownMenu">
+                                <label class="dropdown-item select-all-item"><input type="checkbox" id="lulcSelectAll"><span class="select-all-text">Select / Unselect All</span></label>
+                                <div class="dropdown-divider"></div>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Tree Cover"><span class="lulc-color" style="background:#228b22"></span>Tree Cover</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Shrubland"><span class="lulc-color" style="background:#90ee90"></span>Shrubland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Grassland"><span class="lulc-color" style="background:#adff2f"></span>Grassland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Cropland"><span class="lulc-color" style="background:#ffd700"></span>Cropland</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Built_up"><span class="lulc-color" style="background:#dc143c"></span>Built-up</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Sparse Vegetation"><span class="lulc-color" style="background:#deb887"></span>Sparse Vegetation</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Water Bodies"><span class="lulc-color" style="background:#1e90ff"></span>Water Bodies</label>
+                                <label class="dropdown-item"><input type="checkbox" class="lulc-class" data-class="Mangroves"><span class="lulc-color" style="background:#134404"></span>Mangroves</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Map Statistics -->
+            <section class="section stats-section" aria-labelledby="stats-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">📊</span>
+                    <h3 id="stats-section-title">Map Statistics</h3>
+                </div>
+                <dl class="stats">
+                    <div class="stat-item">
+                        <dt class="stat-label">Current Zoom:</dt>
+                        <dd class="stat-value" id="currentZoom">0.00</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Visible Features:</dt>
+                        <dd class="stat-value" id="visibleFeatures">0</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Min Depth (view):</dt>
+                        <dd class="stat-value" id="minDepth">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Max Depth (view):</dt>
+                        <dd class="stat-value" id="maxDepth">--</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Affected Area (view):</dt>
+                        <dd class="stat-value" id="totalArea">0.00 km²</dd>
+                    </div>
+                    <div class="stat-item">
+                        <dt class="stat-label">Flooded Area (&gt;1m):</dt>
+                        <dd class="stat-value" id="floodedArea">0.00 km²</dd>
+                    </div>
+                </dl>
+            </section>
+
+            <!-- Activity Logs -->
+            <section class="section logs-section" aria-labelledby="logs-section-title">
+                <div class="section-header">
+                    <span class="icon" aria-hidden="true">📋</span>
+                    <h3 id="logs-section-title">Activity Logs</h3>
+                </div>
+                <div 
+                    class="logs-container" 
+                    id="logsContainer" 
+                    role="log" 
+                    aria-live="polite" 
+                    aria-label="Application activity log"
+                >
+                    <!-- Logs will be dynamically added here -->
+                </div>
+            </section>
+        </aside>
+
+        <!-- Map Container -->
+        <main class="map-wrapper">
+            <div 
+                id="map" 
+                role="application" 
+                aria-label="Interactive flood depth map"
+                tabindex="0"
+            ></div>
+            
+            <!-- Loading Overlay -->
+            <div 
+                id="loadingOverlay" 
+                class="loading-overlay" 
+                style="display: none;" 
+                role="status" 
+                aria-live="polite"
+            >
+                <div class="spinner" aria-hidden="true"></div>
+                <p class="loading-text">Loading PMTiles...</p>
+            </div>
+            
+            <!-- Flood Depth Legend -->
+            <div class="map-overlay legend-overlay" id="legendOverlay" role="complementary" aria-label="Flood depth legend">
+                <h4 id="legendTitle"></h4>
+                <div class="legend-items" id="legendItems">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #f5fbff, #d6ecff);" aria-hidden="true"></div>
+                        <span class="legend-label">0 - 0.2m</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #d6ecff, #9dd1ff);" aria-hidden="true"></div>
+                        <span class="legend-label">0.2 - 0.5m</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #9dd1ff, #5aa8ff);" aria-hidden="true"></div>
+                        <span class="legend-label">0.5 - 1m</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #5aa8ff, #1e6ddf);" aria-hidden="true"></div>
+                        <span class="legend-label">1 - 2m</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: linear-gradient(to right, #1e6ddf, #0b3a8c);" aria-hidden="true"></div>
+                        <span class="legend-label">&gt; 2m</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Application Module -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
+<!--  -->

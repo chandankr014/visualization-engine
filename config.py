@@ -17,11 +17,11 @@ CRS="EPSG4326"
 # Each batch file contains BATCH_SIZE time slots with flood_depths array property
 BATCH_SIZE = 48  # Number of time slots per batch file
 BATCH_DURATION_HOURS = 4  # Each batch covers 4 hours (48 * 5 min = 240 min = 4 hours)
-PMTILES_FLOOD_DIR = "pmtiles/flood"
+PMTILES_FLOOD_DIR = "public/pmtiles/flood"
 DEPTH_PROPERTY_PREFIX = "D"
 
 # Legacy - kept for backward compatibility
-MASTER_PMTILES_FILE = "pmtiles/flood/flood_depth_master.pmtiles"
+MASTER_PMTILES_FILE = "public/pmtiles/flood/flood_depth_master.pmtiles"
 
 
 def parse_time(time_int: int):

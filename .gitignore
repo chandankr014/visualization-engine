@@ -2,6 +2,7 @@
 # *.geojson
 *.ipynb
 __pycache__
+*.pyc
 venv
 # Ignore all markdown files except README variants
 *.md

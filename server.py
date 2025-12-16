@@ -14,6 +14,8 @@ import os
 import sys
 import json
 import struct
+import argparse
+from functools import partial
 from pathlib import Path
 from datetime import datetime
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -24,19 +26,21 @@ import config
 
 # Configuration
 DEFAULT_PORT = 8000
+DEFAULT_HOST = os.getenv("APP_BIND_HOST", "127.0.0.1")
 PMTILES_DIR = "pmtiles"
 PMTILES_FLOOD_DIR = "pmtiles/flood"
 PMTILES_STATIC_DIR = "pmtiles/static"
 CITY_DIR = "city"
 CITY_NAME = "gurugram"
 MASTER_PMTILES_FILE = config.MASTER_PMTILES_FILE
+PUBLIC_DIR_NAME = "public"
 
 
 class PMTilesAPI:
     """API handler for PMTiles-related operations."""
     
     def __init__(self, base_dir: str):
-        self.base_dir = Path(base_dir)
+        self.base_dir = Path(base_dir) / PUBLIC_DIR_NAME
         self.pmtiles_dir = self.base_dir / PMTILES_DIR / CITY_NAME
         self.master_file_path = self.base_dir / MASTER_PMTILES_FILE
         self.time_slots = config.get_time_slots()
@@ -153,30 +157,7 @@ class PMTilesAPI:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
-    
-    def get_hotspots(self) -> dict:
-        """Get hotspots GeoJSON."""
-        city_dir = self.base_dir / CITY_DIR / CITY_NAME
-        hotspots_file = city_dir / "hotspots.geojson"
-        
-        if not hotspots_file.exists():
-            return {"success": False, "error": "Hotspots file not found"}
-        
-        try:
-            with open(hotspots_file, 'r', encoding='utf-8') as f:
-                geojson_data = json.load(f)
-            
-            stat = hotspots_file.stat()
-            return {
-                "success": True,
-                "data": geojson_data,
-                "size": stat.st_size,
-                "sizeFormatted": self._format_size(stat.st_size),
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
-            }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
+  
     def get_hotspots(self) -> dict:
         """Get hotspots GeoJSON."""
         city_dir = self.base_dir / CITY_DIR / CITY_NAME
@@ -427,7 +408,6 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
                 "endTime": config.END_TIME,
                 "interval": config.INTERVAL,
                 "crs": config.CRS,
-                # Batch configuration for optimized PMTiles
                 "batchSize": config.BATCH_SIZE,
                 "batchDurationHours": config.BATCH_DURATION_HOURS,
                 "batchFiles": batch_files,
@@ -588,17 +568,27 @@ class _RangeFile:
 
 def run_server(port: int = DEFAULT_PORT, directory: str = None):
     """Start the HTTP server."""
-    if directory:
-        os.chdir(directory)
-    
-    base_dir = os.getcwd()
-    APIRequestHandler.api = PMTilesAPI(base_dir)
+    base_dir = Path(directory).resolve() if directory else Path(__file__).resolve().parent
+    serve_dir_candidate = base_dir / PUBLIC_DIR_NAME
+    # Serve from `public/` only when it actually contains the web entrypoint.
+    # This keeps local/dev behavior working even if `public/` exists but is not populated.
+    if serve_dir_candidate.exists() and (serve_dir_candidate / "viewer.html").exists():
+        serve_dir = serve_dir_candidate
+    else:
+        # Backward-compatible dev behavior; for production, create/symlink a safe `public/` folder.
+        serve_dir = base_dir
+
+    APIRequestHandler.api = PMTilesAPI(str(base_dir))
     files_info = APIRequestHandler.api.get_available_files()
-    
-    server_address = ('', port)
-    httpd = HTTPServer(server_address, APIRequestHandler)
-    
-    print(f"http://localhost:{port} | {files_info['count']} PMTiles files | Dir: {base_dir}\nPress Ctrl+C to stop.")
+
+    server_address = (DEFAULT_HOST, port)
+    handler = partial(APIRequestHandler, directory=str(serve_dir))
+    httpd = HTTPServer(server_address, handler)
+
+    print(
+        f"http://{DEFAULT_HOST}:{port} | {files_info['count']} PMTiles files | Base: {base_dir} | Serve: {serve_dir}\n"
+        "Press Ctrl+C to stop."
+    )
     
     try:
         httpd.serve_forever()
@@ -609,5 +599,15 @@ def run_server(port: int = DEFAULT_PORT, directory: str = None):
 
 
 if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
-    run_server(port)
+    parser = argparse.ArgumentParser(description="PMTiles HTTP Server + REST API")
+    parser.add_argument('port', nargs='?', type=int, default=DEFAULT_PORT, help='Port to listen on (default: 8000)')
+    parser.add_argument('--host', default=DEFAULT_HOST, help='Bind host (default: 127.0.0.1). Set 0.0.0.0 to listen publicly.')
+    parser.add_argument('--base-dir', dest='base_dir', default=os.getenv('APP_BASE_DIR'), help='Project base directory (optional)')
+    args = parser.parse_args()
+
+    # Override default host if provided.
+    if args.host:
+        os.environ["APP_BIND_HOST"] = args.host
+        DEFAULT_HOST = args.host
+
+    run_server(args.port, args.base_dir)

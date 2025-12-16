@@ -1,0 +1,19 @@
+[Unit]
+Description=AppDeploy PMTiles API Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/appdeploy
+
+# Bind to localhost only. Nginx listens on 80/443 and proxies /api/.
+Environment=APP_BIND_HOST=127.0.0.1
+Environment=APP_BASE_DIR=/opt/appdeploy
+
+ExecStart=/usr/bin/python3 /opt/appdeploy/server.py 8000 --host 127.0.0.1 --base-dir /opt/appdeploy
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
