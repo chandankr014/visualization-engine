@@ -287,8 +287,11 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
     
     def log_request(self, code='-', size='-'):
         """Override to log with response size in KB."""
-        if isinstance(code, str):
-            code = code
+        # NOTE: `http.server` can call `log_request` while handling malformed
+        # requests (e.g., TLS handshakes sent to an HTTP port). In those cases
+        # `self.path` (and sometimes `self.command`) may not be set yet.
+        safe_path = getattr(self, 'path', '') or ''
+        safe_command = getattr(self, 'command', '-') or '-'
         
         # Format size in KB
         size_kb = '-'
@@ -301,11 +304,11 @@ class APIRequestHandler(SimpleHTTPRequestHandler):
                 size_kb = size
         
         # Skip logging for static assets
-        if any(ext in self.path for ext in ['.js', '.css', '.png', '.ico']):
+        if safe_path and any(ext in safe_path for ext in ['.js', '.css', '.png', '.ico']):
             return
         
         # Log format: [TIME] METHOD PATH STATUS SIZE
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] {self.command} {self.path} - {code} - {size_kb}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {safe_command} {safe_path} - {code} - {size_kb}")
     
     def log_message(self, format, *args):
         """Custom log format - handled by log_request."""
